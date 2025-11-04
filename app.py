@@ -114,9 +114,8 @@ def clear_database():
     conn.commit()
     conn.close()
 
-
 # ===============================================================
-# 4. Save to Excel
+# 4. Excel Save (append to next empty row)
 # ===============================================================
 def save_to_excel(
     fields,
@@ -142,7 +141,7 @@ def save_to_excel(
         return
 
     ws = wb[sheet_name]
-    target_row = ws.max_row + 1  # automatically append to next empty row
+    target_row = ws.max_row + 1
 
     data = [
         fields.get("Product Description"),
@@ -157,24 +156,46 @@ def save_to_excel(
 
     wb.save(temp_copy)
     shutil.move(temp_copy, excel_path)
-    st.info(f"✅ Added data to Excel row {target_row} in '{sheet_name}'")
-
+    st.info(f"✅ Added to Excel row {target_row} in '{sheet_name}'")
 
 # ===============================================================
-# 5. Streamlit UI + Chat Agent
+# 5. NEW — BULK PROCESSING FEATURE
 # ===============================================================
-st.title("🤖 AI SKU Agent — Upload, Search, Store")
+def process_all_files_in_folder(folder="data/specs/"):
+    files = [os.path.join(folder, f) for f in os.listdir(folder)
+             if f.endswith((".docx", ".jpg", ".png", ".jpeg"))]
+
+    if not files:
+        return "❌ No files found to process."
+
+    processed_count = 0
+
+    for file in files:
+        text = extract_text_from_docx(file) if file.endswith(".docx") else extract_text_from_image(file)
+        fields = parse_vendor_doc(text)
+        save_to_db(fields)
+        save_to_excel(fields)
+        processed_count += 1
+
+    return f"✅ Bulk import complete — {processed_count} files processed."
+
+# ===============================================================
+# 6. Streamlit UI + Chat Agent
+# ===============================================================
+st.title("🤖 AI SKU Agent — Upload, Search, Store, Bulk Import")
 
 st.markdown("""
-Upload a vendor document OR chat with your SKU agent.
+✨ Now supports **bulk importing multiple vendor documents at once.**
+Use the chatbot or the button below.
 
-**Commands supported:**
-- `process` → imports latest doc from folder
-- `search SN52` → search DB by SKU or batch #
-- `clear database` → remove all entries
+**Chat Commands**
+- `process` → imports latest doc
+- `process all` → bulk import all docs/images in folder
+- `search SN52`
+- `clear database`
 """)
 
-# Maintain chat history
+# Chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -188,42 +209,40 @@ if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
     response = None
 
-    if "process" in user_input.lower():
-        folder = "data/specs/"
-        files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith((".docx", ".jpg", ".png", ".jpeg"))]
+    if "process all" in user_input.lower() or "bulk" in user_input.lower():
+        response = process_all_files_in_folder()
 
+    elif "process" in user_input.lower():
+        folder = "data/specs/"
+        files = [os.path.join(folder, f) for f in os.listdir(folder)
+                 if f.endswith((".docx", ".jpg", ".png", ".jpeg"))]
         if not files:
-            response = "❌ No files found in /data/specs/"
+            response = "❌ No files found."
         else:
             latest = max(files, key=os.path.getmtime)
             text = extract_text_from_docx(latest) if latest.endswith(".docx") else extract_text_from_image(latest)
             fields = parse_vendor_doc(text)
             save_to_db(fields)
             save_to_excel(fields)
-            response = f"✅ Imported SKU: **{fields.get('SKU')}** (Batch {fields.get('Batch/Lot No.')})"
+            response = f"✅ Imported latest SKU: {fields.get('SKU')}"
 
-    elif "search" in user_input.lower() or "show" in user_input.lower():
-        search_term = user_input.split()[-1]
-        df = search_database(search_term)
-
-        if df.empty:
-            response = f"🔍 No results found for `{search_term}`"
-        else:
-            st.dataframe(df)
-            response = f"📊 Showing results for `{search_term}`"
+    elif "search" in user_input.lower():
+        term = user_input.split()[-1]
+        df = search_database(term)
+        st.dataframe(df)
+        response = f"📊 Showing results for `{term}`"
 
     elif "clear database" in user_input.lower():
         clear_database()
         response = "🧹 Database cleared."
 
     else:
-        response = "🤖 I can `process`, `search`, or `clear database`."
+        response = "🤖 I can `process`, `process all`, `search`, or `clear database`."
 
     st.session_state.messages.append({"role": "assistant", "content": response})
 
-
 # ===============================================================
-# Manual Upload UI
+# Manual Upload Section
 # ===============================================================
 st.divider()
 st.header("📄 Manual Upload")
@@ -231,20 +250,21 @@ st.header("📄 Manual Upload")
 uploaded_file = st.file_uploader("Upload DOCX or Image", type=["jpg", "png", "jpeg", "docx"])
 
 if uploaded_file:
-    if uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        text = extract_text_from_docx(uploaded_file)
-    else:
-        text = extract_text_from_image(uploaded_file)
+    text = extract_text_from_docx(uploaded_file) if uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" else extract_text_from_image(uploaded_file)
 
-    st.subheader("🔍 Extracted Text")
-    st.text(text if text.strip() else "(No text detected)")
+    st.subheader("🔎 Extracted Text")
+    st.text(text)
 
     fields = parse_vendor_doc(text)
-
     st.subheader("📦 Parsed Fields")
     st.json(fields)
 
     if st.button("💾 Save to Database & Excel"):
         save_to_db(fields)
         save_to_excel(fields)
-        st.success("✅ Data saved successfully.")
+        st.success("✅ Saved successfully.")
+
+# Bulk processing button in UI
+if st.button("⚡ Process ALL documents in /data/specs/"):
+    result = process_all_files_in_folder()
+    st.success(result)
