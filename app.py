@@ -107,7 +107,6 @@ def search_database(search_term):
     conn.close()
     return df
 
-
 def clear_database():
     conn = sqlite3.connect("sku_catalog.db")
     conn.execute("DELETE FROM sku_catalog;")
@@ -159,7 +158,7 @@ def save_to_excel(
     st.info(f"✅ Added to Excel row {target_row} in '{sheet_name}'")
 
 # ===============================================================
-# 5. NEW — BULK PROCESSING FEATURE
+# 5. BULK PROCESSING FEATURE
 # ===============================================================
 def process_all_files_in_folder(folder="data/specs/"):
     files = [os.path.join(folder, f) for f in os.listdir(folder)
@@ -182,20 +181,16 @@ def process_all_files_in_folder(folder="data/specs/"):
 # ===============================================================
 # 6. Streamlit UI + Chat Agent
 # ===============================================================
-st.title("🤖 AI SKU Agent — Upload, Search, Store, Bulk Import")
+st.title("🤖 AI SKU Agent — Upload, Search, Store, Bulk Import, Webcam Capture")
 
 st.markdown("""
-✨ Now supports **bulk importing multiple vendor documents at once.**
-Use the chatbot or the button below.
-
-**Chat Commands**
-- `process` → imports latest doc
-- `process all` → bulk import all docs/images in folder
+**Chat Commands:**
+- `process` → import latest document
+- `process all` → bulk import every DOCX/image in folder
 - `search SN52`
 - `clear database`
 """)
 
-# Chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -242,18 +237,28 @@ if user_input:
     st.session_state.messages.append({"role": "assistant", "content": response})
 
 # ===============================================================
-# Manual Upload Section
+# 7. Manual Upload + CAMERA CAPTURE
 # ===============================================================
 st.divider()
-st.header("📄 Manual Upload")
+st.header("📸 Capture or Upload")
 
-uploaded_file = st.file_uploader("Upload DOCX or Image", type=["jpg", "png", "jpeg", "docx"])
+camera_file = st.camera_input("Take a photo of a vendor document")
 
-if uploaded_file:
-    text = extract_text_from_docx(uploaded_file) if uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" else extract_text_from_image(uploaded_file)
+uploaded_file = st.file_uploader("Or upload DOCX or image", type=["jpg", "png", "jpeg", "docx"])
+
+file_to_process = camera_file if camera_file else uploaded_file
+
+if file_to_process:
+    if (
+        hasattr(file_to_process, "type")
+        and file_to_process.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        text = extract_text_from_docx(file_to_process)
+    else:
+        text = extract_text_from_image(file_to_process)
 
     st.subheader("🔎 Extracted Text")
-    st.text(text)
+    st.text(text if text.strip() else "(No text detected)")
 
     fields = parse_vendor_doc(text)
     st.subheader("📦 Parsed Fields")
@@ -264,7 +269,7 @@ if uploaded_file:
         save_to_excel(fields)
         st.success("✅ Saved successfully.")
 
-# Bulk processing button in UI
+# Bulk button also in UI
 if st.button("⚡ Process ALL documents in /data/specs/"):
     result = process_all_files_in_folder()
     st.success(result)
