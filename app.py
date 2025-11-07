@@ -9,7 +9,7 @@ import os
 import shutil
 
 # ===============================================================
-# 1. OCR & DOCX Extraction
+# 1. OCR + DOCX EXTRACTION
 # ===============================================================
 def extract_text_from_image(image_file):
     img = Image.open(image_file)
@@ -30,11 +30,10 @@ def extract_text_from_docx(docx_file):
                 text_parts.append(f"{cells[0]} {cells[1]}")
             elif cells:
                 text_parts.append(" | ".join(cells))
-
     return "\n".join(text_parts)
 
 # ===============================================================
-# 2. Parse Fields
+# 2. PARSE FIELDS
 # ===============================================================
 def parse_vendor_doc(text):
     fields = {
@@ -44,47 +43,43 @@ def parse_vendor_doc(text):
         "SKU": None,
         "Qty": None,
     }
-
     for line in text.splitlines():
         line = line.strip()
-        for key in fields:
+        for key in fields.keys():
             if line.lower().startswith(key.lower()):
                 parts = line.split(":", 1)
                 if len(parts) == 2:
                     fields[key] = parts[1].strip()
-
     return fields
 
 # ===============================================================
-# 3. Database Operations
+# 3. DATABASE (with deduping + search)
 # ===============================================================
 def save_to_db(fields):
     conn = sqlite3.connect("sku_catalog.db")
     cur = conn.cursor()
 
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS sku_catalog (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            product_desc TEXT,
-            batch_lot TEXT,
-            date TEXT,
-            sku TEXT,
-            qty TEXT
-        )
+    CREATE TABLE IF NOT EXISTS sku_catalog (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_desc TEXT,
+        batch_lot TEXT,
+        date TEXT,
+        sku TEXT,
+        qty TEXT
+    )
     """)
 
-    sku = fields["SKU"]
-    batch = fields["Batch/Lot No."]
-
-    cur.execute("SELECT COUNT(*) FROM sku_catalog WHERE sku = ? AND batch_lot = ?", (sku, batch))
+    cur.execute("SELECT COUNT(*) FROM sku_catalog WHERE sku = ? AND batch_lot = ?",
+                (fields["SKU"], fields["Batch/Lot No."]))
     exists = cur.fetchone()[0]
 
     if exists > 0:
-        st.warning(f"⚠️ Entry already exists (SKU: {sku}, Batch: {batch}) — skipped.")
+        st.warning("⚠️ Duplicate entry. Not saved.")
     else:
         cur.execute("""
-            INSERT INTO sku_catalog (product_desc, batch_lot, date, sku, qty)
-            VALUES (?, ?, ?, ?, ?)
+        INSERT INTO sku_catalog (product_desc, batch_lot, date, sku, qty)
+        VALUES (?, ?, ?, ?, ?)
         """, (
             fields["Product Description"],
             fields["Batch/Lot No."],
@@ -93,183 +88,180 @@ def save_to_db(fields):
             fields["Qty"]
         ))
         conn.commit()
-        st.success(f"✅ Saved: SKU {sku}, Batch {batch}")
-
+        st.success("✅ Saved to database!")
     conn.close()
 
-
-def search_database(search_term):
+def search_db(keyword):
     conn = sqlite3.connect("sku_catalog.db")
-    df = pd.read_sql_query(
-        "SELECT * FROM sku_catalog WHERE sku LIKE ? OR batch_lot LIKE ?",
-        conn,
-        params=(f"%{search_term}%", f"%{search_term}%"))
+    query = f"""
+        SELECT * FROM sku_catalog
+        WHERE product_desc LIKE '%{keyword}%'
+        OR sku LIKE '%{keyword}%'
+        OR batch_lot LIKE '%{keyword}%'
+    """
+    df = pd.read_sql_query(query, conn)
     conn.close()
     return df
 
 def clear_database():
     conn = sqlite3.connect("sku_catalog.db")
-    conn.execute("DELETE FROM sku_catalog;")
+    cur = conn.cursor()
+    cur.execute("DELETE FROM sku_catalog;")
     conn.commit()
     conn.close()
 
 # ===============================================================
-# 4. Excel Save (append to next empty row)
+# 4. SAVE TO EXCEL (existing tab + row 757)
 # ===============================================================
-def save_to_excel(
-    fields,
-    excel_path="data/specs/sample_specs.xlsx",
-    sheet_name="Master Sheet - 12th Floor"
-):
+def save_to_excel(fields, excel_path="data/specs/sample_specs.xlsx",
+                  sheet_name="Master Sheet - 12th Floor", row=757):
 
     if not os.path.exists(excel_path):
-        st.error(f"❌ Excel file not found at: {excel_path}")
+        st.error(f"❌ Excel not found: {excel_path}")
         return
 
-    temp_copy = excel_path.replace(".xlsx", "_temp.xlsx")
-    shutil.copyfile(excel_path, temp_copy)
+    temp = excel_path.replace(".xlsx", "_temp.xlsx")
+    shutil.copyfile(excel_path, temp)
 
-    try:
-        wb = openpyxl.load_workbook(temp_copy)
-    except Exception as e:
-        st.error(f"❌ Could not open Excel file.\n\nError: {e}")
-        return
-
+    wb = openpyxl.load_workbook(temp)
     if sheet_name not in wb.sheetnames:
-        st.error(f"❌ Sheet '{sheet_name}' not found. Sheets available: {wb.sheetnames}")
+        st.error(f"❌ Sheet '{sheet_name}' not found.")
         return
 
     ws = wb[sheet_name]
-    target_row = ws.max_row + 1
+
+    # ensure correct row exists
+    while ws.max_row < row:
+        ws.append([])
 
     data = [
-        fields.get("Product Description"),
-        fields.get("Batch/Lot No."),
-        fields.get("Date"),
-        fields.get("SKU"),
-        fields.get("Qty"),
+        fields["Product Description"],
+        fields["Batch/Lot No."],
+        fields["Date"],
+        fields["SKU"],
+        fields["Qty"]
     ]
 
     for col, value in enumerate(data, start=1):
-        ws.cell(row=target_row, column=col, value=value)
+        ws.cell(row=row, column=col, value=value)
 
-    wb.save(temp_copy)
-    shutil.move(temp_copy, excel_path)
-    st.info(f"✅ Added to Excel row {target_row} in '{sheet_name}'")
-
-# ===============================================================
-# 5. BULK PROCESSING FEATURE
-# ===============================================================
-def process_all_files_in_folder(folder="data/specs/"):
-    files = [os.path.join(folder, f) for f in os.listdir(folder)
-             if f.endswith((".docx", ".jpg", ".png", ".jpeg"))]
-
-    if not files:
-        return "❌ No files found to process."
-
-    processed_count = 0
-
-    for file in files:
-        text = extract_text_from_docx(file) if file.endswith(".docx") else extract_text_from_image(file)
-        fields = parse_vendor_doc(text)
-        save_to_db(fields)
-        save_to_excel(fields)
-        processed_count += 1
-
-    return f"✅ Bulk import complete — {processed_count} files processed."
+    wb.save(temp)
+    shutil.move(temp, excel_path)
+    st.success(f"✅ Added to Excel at row {row}")
 
 # ===============================================================
-# 6. Streamlit UI + Chat Agent
+# STREAMLIT UI (CHAT + CAMERA + UPLOAD + FOLDER PROCESSING)
 # ===============================================================
-st.title("🤖 AI SKU Agent — Upload, Search, Store, Bulk Import, Webcam Capture")
+st.title("📦 AI-Powered Vendor Doc → Excel + DB")
 
-st.markdown("""
-**Chat Commands:**
-- `process` → import latest document
-- `process all` → bulk import every DOCX/image in folder
-- `search SN52`
-- `clear database`
-""")
-
+# Chat memory
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Display chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+        st.write(msg["content"])
 
-user_input = st.chat_input("Type a command...")
+# CHAT INPUT
+user_input = st.chat_input("Ask me something like: 'process latest', 'show database', 'search SN52', 'process folder'")
 
 if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
-    response = None
 
-    if "process all" in user_input.lower() or "bulk" in user_input.lower():
-        response = process_all_files_in_folder()
-
-    elif "process" in user_input.lower():
+    # PROCESS LATEST
+    if "process latest" in user_input.lower():
         folder = "data/specs/"
         files = [os.path.join(folder, f) for f in os.listdir(folder)
-                 if f.endswith((".docx", ".jpg", ".png", ".jpeg"))]
+                 if f.endswith((".jpg", ".png", ".jpeg", ".docx"))]
         if not files:
-            response = "❌ No files found."
+            reply = "❌ No documents found."
         else:
             latest = max(files, key=os.path.getmtime)
             text = extract_text_from_docx(latest) if latest.endswith(".docx") else extract_text_from_image(latest)
             fields = parse_vendor_doc(text)
             save_to_db(fields)
             save_to_excel(fields)
-            response = f"✅ Imported latest SKU: {fields.get('SKU')}"
+            reply = f"✅ Processed latest file: {os.path.basename(latest)}"
 
+    # PROCESS FOLDER (BULK)
+    elif "process folder" in user_input.lower() or "process all" in user_input.lower():
+        folder = "data/specs/"
+        files = [os.path.join(folder, f) for f in os.listdir(folder)
+                 if f.endswith((".jpg", ".png", ".jpeg", ".docx"))]
+
+        if not files:
+            reply = "❌ No files to process."
+        else:
+            for f in files:
+                text = extract_text_from_docx(f) if f.endswith(".docx") else extract_text_from_image(f)
+                save_to_db(parse_vendor_doc(text))
+            reply = f"✅ Processed {len(files)} files."
+
+    # SEARCH FUNCTION
     elif "search" in user_input.lower():
-        term = user_input.split()[-1]
-        df = search_database(term)
+        keyword = user_input.split("search", 1)[1].strip()
+        df = search_db(keyword)
         st.dataframe(df)
-        response = f"📊 Showing results for `{term}`"
+        reply = f"🔍 Results for '{keyword}'"
 
+    # SHOW DATABASE
+    elif "show database" in user_input.lower():
+        conn = sqlite3.connect("sku_catalog.db")
+        df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
+        conn.close()
+        st.dataframe(df)
+        reply = "📊 Displayed database."
+
+    # CLEAR DATABASE
     elif "clear database" in user_input.lower():
         clear_database()
-        response = "🧹 Database cleared."
+        reply = "🧹 Database cleared."
 
     else:
-        response = "🤖 I can `process`, `process all`, `search`, or `clear database`."
+        reply = "🤖 Commands:\n• process latest\n• process folder\n• search <keyword>\n• show database\n• clear database"
 
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.messages.append({"role": "assistant", "content": reply})
 
 # ===============================================================
-# 7. Manual Upload + CAMERA CAPTURE
+# CAMERA (user presses button, then camera appears)
 # ===============================================================
 st.divider()
-st.header("📸 Capture or Upload")
+st.subheader("📸 Capture Vendor Doc via Camera")
 
-camera_file = st.camera_input("Take a photo of a vendor document")
+if "camera_open" not in st.session_state:
+    st.session_state.camera_open = False
 
-uploaded_file = st.file_uploader("Or upload DOCX or image", type=["jpg", "png", "jpeg", "docx"])
+if st.button("📷 Open Camera"):
+    st.session_state.camera_open = True
 
-file_to_process = camera_file if camera_file else uploaded_file
+camera_file = st.camera_input("Take a picture") if st.session_state.camera_open else None
 
-if file_to_process:
-    if (
-        hasattr(file_to_process, "type")
-        and file_to_process.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ):
-        text = extract_text_from_docx(file_to_process)
-    else:
-        text = extract_text_from_image(file_to_process)
+if camera_file:
+    st.success("✅ Photo captured — click Save to process")
 
-    st.subheader("🔎 Extracted Text")
-    st.text(text if text.strip() else "(No text detected)")
-
+    text = extract_text_from_image(camera_file)
     fields = parse_vendor_doc(text)
-    st.subheader("📦 Parsed Fields")
     st.json(fields)
 
-    if st.button("💾 Save to Database & Excel"):
+    if st.button("💾 Save Camera Image to DB + Excel"):
         save_to_db(fields)
         save_to_excel(fields)
-        st.success("✅ Saved successfully.")
 
-# Bulk button also in UI
-if st.button("⚡ Process ALL documents in /data/specs/"):
-    result = process_all_files_in_folder()
-    st.success(result)
+# ===============================================================
+# MANUAL FILE UPLOAD
+# ===============================================================
+st.divider()
+st.subheader("📄 Upload Vendor Document")
+
+uploaded = st.file_uploader("Upload DOCX or image", type=["jpg", "png", "jpeg", "docx"])
+
+if uploaded:
+    text = extract_text_from_docx(uploaded) if uploaded.name.endswith(".docx") else extract_text_from_image(uploaded)
+
+    fields = parse_vendor_doc(text)
+    st.json(fields)
+
+    if st.button("💾 Save Upload to DB + Excel"):
+        save_to_db(fields)
+        save_to_excel(fields)
