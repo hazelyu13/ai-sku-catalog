@@ -1,5 +1,5 @@
 # ===============================================================
-#  TARTE BEAUTY — FULL REDESIGN STREAMLIT APPLICATION
+#  TARTE BEAUTY  ·  LUXURY DASHBOARD
 #  AI-Powered SKU Intake System
 # ===============================================================
 
@@ -29,84 +29,165 @@ st.set_page_config(
 )
 
 # ===============================================================
-# TARTE PURPLE UI THEME — CSS INJECTION
+# LUXURY TARTE UI THEME
 # ===============================================================
 
 tarte_css = """
 <style>
 
-    <style>
-    /* FULL GRADIENT BACKGROUND */
-    stApp { background: linear-gradient(180deg, #6d2ea6 0%, #b088d1 20%, #f5eafe 150%) !important; background-attachment: fixed; }
-
-    /* SIDEBAR — matched gradient */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #6d2ea6 0%, #b088d1 20%, #f5eafe 150%) !important;
+    /* GLOBAL BACKGROUND - soft gradient */
+    .stApp {
+        background: radial-gradient(circle at 0% 0%, #fdf4ff 0%, #ead7ff 40%, #d7c1f3 100%) !important;
         background-attachment: fixed;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    /* MAIN CONTENT WIDTH */
+    div.block-container {
+        max-width: 1180px;
+        padding-top: 2.5rem;
+        padding-bottom: 2.5rem;
+        margin: 0 auto;
+    }
+
+    /* TOP TOOLBAR */
+    header[data-testid="stHeader"] {
+        background-color: rgba(0, 0, 0, 0);
+    }
+
+    /* SIDEBAR PANEL */
+    section[data-testid="stSidebar"] {
+        background: #c098ea !important;
+        border-right: 2px solid #8b55c9;
         padding-top: 2rem;
     }
-
-    /* GOLD VERTICAL LINE ON SIDEBAR EDGE */
-    section[data-testid="stSidebar"] > div:first-child {
-        border-right: 3px solid #d4af37 !important; /* tarte gold */
-        padding-right: 10px;
+    section[data-testid="stSidebar"] * {
+        color: #240a3f !important;
+        font-weight: 500;
     }
 
-    /* HEADER CARD */
-    .tarte-header {
-        background: #FFFFFF20;
-        padding: 20px;
-        border-radius: 18px;
-        text-align: center;
-        border: 1px solid #FFFFFF40;
-        box-shadow: 0 4px 14px rgba(0,0,0,0.18);
-        margin-bottom: 20px;
+    /* Sidebar title */
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3 {
+        color: #240a3f !important;
+        font-weight: 800 !important;
     }
 
-    .tarte-header h2 {
-        color: #ffffff !important;
-        font-size: 32px;
-        margin-bottom: 2px;
+    /* Sidebar radio as pill nav */
+    div[role="radiogroup"] > label {
+        border-radius: 999px;
+        padding: 0.3rem 0.9rem;
+        margin-bottom: 0.25rem;
+        transition: all 0.18s ease-in-out;
+        border: 1px solid transparent;
+    }
+
+    div[role="radiogroup"] > label:hover {
+        background-color: #f6edff40;
+        border-color: #f6edff80;
+    }
+
+    /* Highlight selected option */
+    div[role="radiogroup"] input[checked] + div {
+        color: #240a3f !important;
         font-weight: 700;
     }
 
-    .tarte-header p {
-        color: #f8eefe !important;
-        font-size: 16px;
-        margin-top: -5px;
-    }
-
-    /* CONTENT CARDS */
-    .tarte-card {
-        background: #ffffffdd;
-        padding: 22px;
-        border-radius: 18px;
-        border: 1px solid #e8d8ff;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-        margin-bottom: 22px;
-    }
-
-    /* GOLD BUTTONS */
-    div.stButton > button {
-        background-color: #cda349 !important;
-        color: white !important;
-        border-radius: 12px !important;
+    /* OPEN EXCEL BUTTON IN SIDEBAR */
+    section[data-testid="stSidebar"] div.stButton > button {
+        width: 100%;
+        background: linear-gradient(135deg, #f8d76a, #f0b94c);
+        color: #3a2308 !important;
+        border-radius: 999px !important;
         border: none !important;
-        padding: 10px 20px !important;
-        font-weight: bold !important;
-        font-size: 15px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+    }
+    section[data-testid="stSidebar"] div.stButton > button:hover {
+        background: linear-gradient(135deg, #ffe27c, #f6c764);
+        transform: translateY(-1px);
     }
 
+    /* LUX HEADER BANNER */
+    .tarte-header {
+        background: linear-gradient(90deg, #ffffffee, #f7efffff);
+        padding: 26px 40px;
+        border-radius: 26px;
+        border: 1px solid #ebddff;
+        box-shadow: 0 12px 30px rgba(115, 71, 153, 0.20);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.5rem;
+        margin-bottom: 24px;
+    }
+
+    .tarte-header-left {
+        text-align: left;
+    }
+    .tarte-header-title {
+        font-size: 30px;
+        font-weight: 800;
+        color: #34114f;
+        margin: 0;
+    }
+    .tarte-header-sub {
+        margin: 4px 0 0 0;
+        font-size: 14px;
+        color: #62447f;
+    }
+
+    .tarte-header-pill {
+        background: #f5ecff;
+        border-radius: 999px;
+        padding: 8px 16px;
+        font-size: 13px;
+        color: #6b3ea5;
+        border: 1px solid #ecd9ff;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* WHITE CONTENT CARDS */
+    .tarte-card {
+        background: #ffffff;
+        padding: 26px 24px;
+        border-radius: 22px;
+        border: 1px solid #ebddff;
+        box-shadow: 0 8px 20px rgba(92, 54, 132, 0.10);
+        margin-bottom: 26px;
+    }
+
+    /* SECTION TITLES */
+    h1, h2, h3, h4, h5 {
+        color: #34114f !important;
+        font-weight: 750 !important;
+    }
+    p, li, label, span, div {
+        color: #4b3569;
+    }
+
+    /* GOLD CTA BUTTONS (main area) */
+    div.stButton > button {
+        background: linear-gradient(135deg, #f3cc5d, #e4a93a) !important;
+        color: #3a2308 !important;
+        border-radius: 999px !important;
+        padding: 0.5rem 1.3rem !important;
+        border: none !important;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+    }
     div.stButton > button:hover {
-        background-color: #e0b863 !important;
-        color: #2B0E41 !important;
-        transform: scale(1.02);
+        background: linear-gradient(135deg, #ffe27b, #f5c65c) !important;
+        transform: translateY(-1px);
     }
 
     /* CHAT BUBBLES */
     .stChatMessage {
-        background: #ffffffcc !important;
-        backdrop-filter: blur(8px);
+        background: #ffffffdd !important;
         border-radius: 12px !important;
         padding: 12px !important;
     }
@@ -180,7 +261,7 @@ def parse_vendor_doc(text):
 
 
 # ===============================================================
-# 3. DATABASE (INIT + SAVE + SEARCH + CLEAR)
+# 3. DATABASE
 # ===============================================================
 def init_db():
     conn = sqlite3.connect("sku_catalog.db")
@@ -207,7 +288,7 @@ def save_to_db(fields):
     exists = cur.fetchone()[0]
 
     if exists:
-        st.warning(f"⚠️ Duplicate detected: SKU {fields['SKU']} / Lot {fields['Batch/Lot No.']}")
+        st.warning(f"⚠️ Duplicate SKU {fields['SKU']} / Lot {fields['Batch/Lot No.']}")
     else:
         cur.execute("""
         INSERT INTO sku_catalog (product_desc, batch_lot, date, sku, qty)
@@ -224,16 +305,18 @@ def save_to_db(fields):
 
     conn.close()
 
+
 def search_db(keyword):
     conn = sqlite3.connect("sku_catalog.db")
     df = pd.read_sql_query(f"""
         SELECT * FROM sku_catalog
-        WHERE sku LIKE '%{keyword}%' 
+        WHERE sku LIKE '%{keyword}%'
         OR batch_lot LIKE '%{keyword}%'
         OR product_desc LIKE '%{keyword}%'
     """, conn)
     conn.close()
     return df
+
 
 def clear_database():
     conn = sqlite3.connect("sku_catalog.db")
@@ -248,7 +331,7 @@ def clear_database():
 # ===============================================================
 def save_to_excel(fields):
     if not os.path.exists(EXCEL_PATH):
-        st.error("❌ Excel file not found.")
+        st.error(f"❌ Excel not found at {EXCEL_PATH}")
         return
 
     temp_path = EXCEL_PATH.replace(".xlsx", "_temp.xlsx")
@@ -256,28 +339,37 @@ def save_to_excel(fields):
 
     wb = openpyxl.load_workbook(temp_path)
     if EXCEL_SHEET_NAME not in wb.sheetnames:
-        st.error(f"❌ Sheet not found: {EXCEL_SHEET_NAME}")
+        st.error("❌ Sheet name incorrect.")
         return
 
     ws = wb[EXCEL_SHEET_NAME]
 
-    while ws.max_row < EXCEL_INSERT_ROW:
+    excel_headers = {}
+    for col in range(1, ws.max_column + 1):
+        header_value = ws.cell(row=1, column=col).value
+        if header_value:
+            excel_headers[header_value.lower()] = col
+
+    mapping = {
+        "product description": fields["Product Description"],
+        "lot #": fields["Batch/Lot No."],
+        "date": fields["Date"],
+        "sku": fields["SKU"],
+        "qty": fields["Qty"],
+    }
+
+    target_row = EXCEL_INSERT_ROW
+    while ws.max_row < target_row:
         ws.append([])
 
-    data = [
-        fields["Product Description"],
-        fields["Batch/Lot No."],
-        fields["Date"],
-        fields["SKU"],
-        fields["Qty"]
-    ]
-
-    for col, val in enumerate(data, start=1):
-        ws.cell(row=EXCEL_INSERT_ROW, column=col, value=val)
+    for key, value in mapping.items():
+        if key in excel_headers:
+            col = excel_headers[key]
+            ws.cell(row=target_row, column=col, value=value)
 
     wb.save(temp_path)
     shutil.move(temp_path, EXCEL_PATH)
-    st.success("💾 Saved to Excel!")
+    st.success("💾 Saved to Excel successfully!")
 
 
 # ===============================================================
@@ -295,34 +387,47 @@ if st.sidebar.button("📂 Open Excel File"):
 
 
 # ===============================================================
+# HEADER BANNER (SHARED)
+# ===============================================================
+st.markdown(
+    """
+    <div class="tarte-header">
+        <div class="tarte-header-left">
+            <p class="tarte-header-title">Tarte AI-Powered SKU Intake</p>
+            <p class="tarte-header-sub">Designed for production retains, lab samples, and go to market traceability.</p>
+        </div>
+        <div>
+            <span class="tarte-header-pill">
+                🧾 Auto intake · ✅ Duplicate safe · 📊 Excel synced
+            </span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ===============================================================
 # HOME PAGE
 # ===============================================================
 if page == "Home":
 
-    st.markdown("""
-        <div class="tarte-header">
-            <h2>Tarte AI-Powered SKU Intake System</h2>
-            <p>Upload → Extract → Parse → Save to Excel + Database</p>
-        </div>
-    """, unsafe_allow_html=True)
-
     st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
     st.subheader("✨ Welcome")
 
-    st.write("""
-    This tool was designed to solve a real workflow challenge observed at Tarte:  
-    **managing vendor retain documents efficiently and accurately.**
+    st.write(
+        """
+This dashboard automates the workflow for cataloging Tarte production retains:
 
-    Features:
-    - Extract SKU data from **DOCX or images**
-    - **Camera capture** direct from device
-    - Auto-dedupe SQLite database  
-    - Auto-insert into **Master Sheet - 12th Floor**, row 757  
-    - Bulk batch processing  
-    - Search + chatbot interface  
-    - Beautiful Tarte-branded UI (purple gradient, gold buttons)
-    """)
-    st.markdown('</div>', unsafe_allow_html=True)
+• Upload DOCX or image files  
+• Capture new retains with the camera  
+• Extract and parse core SKU fields  
+• Store records in a duplicate safe SQLite database  
+• Sync rows directly into the master Excel tracker  
+• Use the chatbot to trigger actions or search data  
+        """
+    )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ===============================================================
@@ -332,71 +437,72 @@ elif page == "Upload":
 
     st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
     st.header("📄 Upload Vendor Documents")
-    st.write("Upload one or more DOCX or image files.")
 
     files = st.file_uploader(
-        "Upload Documents",
+        "Upload one or more files",
         type=["docx", "jpg", "jpeg", "png"],
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        help="Upload retain specs, artwork proofs, or vendor docs."
     )
 
-    all_fields = []
+    collected_fields = []
 
     if files:
         st.success(f"{len(files)} files uploaded.")
 
-        for idx, file in enumerate(files, start=1):
+        for idx, f in enumerate(files, start=1):
             st.markdown("---")
-            st.subheader(f"📄 Document {idx}: {file.name}")
+            st.subheader(f"📄 File {idx}: {f.name}")
 
-            text = extract_text_from_docx(file) if file.name.endswith(".docx") else extract_text_from_image(file)
+            text = (
+                extract_text_from_docx(f)
+                if f.name.lower().endswith(".docx")
+                else extract_text_from_image(f)
+            )
 
-            with st.expander("🔎 Extracted Text"):
+            with st.expander("🔎 Extracted text preview"):
                 st.text(text)
 
             fields = parse_vendor_doc(text)
-            all_fields.append(fields)
-
             st.json(fields)
+            collected_fields.append(fields)
 
-            if st.button(f"💾 Save {file.name}", key=f"save_{idx}"):
+            if st.button(f"💾 Save {f.name}", key=f"save_{idx}"):
                 save_to_db(fields)
                 save_to_excel(fields)
 
-        if st.button("🔥 Process ALL"):
-            for f in all_fields:
-                save_to_db(f)
-                save_to_excel(f)
-            st.success("All documents processed.")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        if collected_fields and st.button("🔥 Process all files"):
+            for flds in collected_fields:
+                save_to_db(flds)
+                save_to_excel(flds)
+            st.success("All files processed and synced.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ===============================================================
-# CAMERA CAPTURE
+# CAMERA PAGE
 # ===============================================================
 elif page == "Camera":
 
     st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
-    st.header("📸 Capture with Camera")
+    st.header("📸 Capture Vendor Document")
 
-    photo = st.camera_input("Take a photo")
+    photo = st.camera_input("Take a photo of the retain or vendor sheet")
 
     if photo:
-        st.success("📸 Photo captured.")
         text = extract_text_from_image(photo)
-
-        with st.expander("🔎 Extracted Text"):
+        with st.expander("🔎 Extracted text preview"):
             st.text(text)
 
         fields = parse_vendor_doc(text)
         st.json(fields)
 
-        if st.button("💾 Save Photo"):
+        if st.button("💾 Save from camera"):
             save_to_db(fields)
             save_to_excel(fields)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ===============================================================
@@ -407,85 +513,64 @@ elif page == "Chatbot":
     st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
     st.header("🤖 Chatbot Mode")
 
-    st.write("""
-        Commands:  
-        - **process latest**  
-        - **process folder**  
-        - **search SN52**  
-        - **show database**  
-        - **clear database**
-    """)
-
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]):
+            st.write(m["content"])
 
-    user_input = st.chat_input("Enter command...")
+    user_input = st.chat_input("Ask me to process latest, search, or show database")
 
     if user_input:
+
         st.session_state.messages.append({"role": "user", "content": user_input})
 
-        # PROCESS LATEST
         if "process latest" in user_input.lower():
             folder = "data/specs/"
-            files = [os.path.join(folder, f) for f in os.listdir(folder)
-                     if f.endswith((".docx", ".jpg", ".jpeg", ".png"))]
+            files = [
+                os.path.join(folder, f)
+                for f in os.listdir(folder)
+                if f.lower().endswith((".docx", ".jpg", ".jpeg", ".png"))
+            ]
 
             if not files:
-                reply = "❌ No documents found."
+                reply = "❌ No files found in data/specs."
             else:
                 latest = max(files, key=os.path.getmtime)
-                text = extract_text_from_docx(latest) if latest.endswith(".docx") else extract_text_from_image(latest)
-
+                text = (
+                    extract_text_from_docx(latest)
+                    if latest.lower().endswith(".docx")
+                    else extract_text_from_image(latest)
+                )
                 fields = parse_vendor_doc(text)
                 save_to_db(fields)
                 save_to_excel(fields)
-                reply = f"Processed latest file: {os.path.basename(latest)}"
+                reply = f"Processed and saved: {os.path.basename(latest)}"
 
-        # PROCESS FOLDER
-        elif "process folder" in user_input.lower() or "process all" in user_input.lower():
-            folder = "data/specs/"
-            files = [os.path.join(folder, f) for f in os.listdir(folder)
-                     if f.endswith((".docx", ".jpg", ".jpeg", ".png"))]
-
-            if not files:
-                reply = "❌ Folder empty."
-            else:
-                for f in files:
-                    text = extract_text_from_docx(f) if f.endswith(".docx") else extract_text_from_image(f)
-                    fields = parse_vendor_doc(text)
-                    save_to_db(fields)
-                reply = f"🔥 Processed {len(files)} documents."
-
-        # SEARCH
         elif "search" in user_input.lower():
             term = user_input.split("search", 1)[1].strip()
             df = search_db(term)
             st.dataframe(df)
-            reply = f"Search results for {term}"
+            reply = f"Search results for '{term}'."
 
-        # SHOW DB
         elif "show database" in user_input.lower():
             conn = sqlite3.connect("sku_catalog.db")
             df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
             conn.close()
             st.dataframe(df)
-            reply = "Displaying database"
+            reply = "Full database view."
 
-        # CLEAR DATABASE
         elif "clear database" in user_input.lower():
             clear_database()
             reply = "Database cleared."
 
         else:
-            reply = "Unknown command."
+            reply = "Unknown command. Try: process latest, search <term>, show database, or clear database."
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ===============================================================
@@ -494,51 +579,43 @@ elif page == "Chatbot":
 elif page == "Database":
 
     st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
-    st.header("📊 Database Search & Viewer")
+    st.header("📊 Database Viewer")
 
     init_db()
 
-    search_term = st.text_input("Search database...")
+    search = st.text_input("Search SKU, lot, or product description")
 
-    if search_term:
-        df = search_db(search_term)
-        st.write(f"Results for '{search_term}':")
+    if search:
+        df = search_db(search)
         st.dataframe(df)
     else:
         conn = sqlite3.connect("sku_catalog.db")
         df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
         conn.close()
-        st.write("All entries:")
         st.dataframe(df)
 
-    if st.button("🧹 Clear Database"):
+    if st.button("🧹 Clear database"):
         clear_database()
         st.success("Database cleared.")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ===============================================================
-# EXCEL TOOLS PAGE
+# EXCEL TOOLS
 # ===============================================================
 elif page == "Excel Tools":
 
     st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
     st.header("📂 Excel Tools")
 
-    st.write(f"Excel Path: `{EXCEL_PATH}`")
-    st.write(f"Sheet Name: `{EXCEL_SHEET_NAME}`")
-    st.write(f"Row Insert: `{EXCEL_INSERT_ROW}`")
+    st.write(f"Excel file: `{EXCEL_PATH}`")
+    st.write(f"Sheet name: `{EXCEL_SHEET_NAME}`")
 
-    if st.button("📂 Open Excel File"):
+    if st.button("📂 Open Excel file"):
         open_excel_file()
 
     st.markdown("---")
-    st.write("""
-        If the sheet does not update:
-        - Make sure Excel is **closed**
-        - Confirm the sheet name exactly matches
-        - Confirm row number is correct
-    """)
+    st.write("Tip: close the workbook before running updates from this dashboard.")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
