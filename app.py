@@ -14,6 +14,7 @@ import os
 import shutil
 import platform
 import subprocess
+import base64
 
 # ===============================================================
 # GLOBAL CONFIG
@@ -37,10 +38,11 @@ tarte_css = """
 
     /* GLOBAL BACKGROUND - soft gradient */
     .stApp {
-        background: radial-gradient(circle at 0% 0%, #fdf4ff 0%, #ead7ff 40%, #d7c1f3 100%) !important;
-        background-attachment: fixed;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #c098ea !important;
+    background-attachment: fixed;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
+
 
     /* MAIN CONTENT WIDTH */
     div.block-container {
@@ -57,10 +59,11 @@ tarte_css = """
 
     /* SIDEBAR PANEL */
     section[data-testid="stSidebar"] {
-        background: #c098ea !important;
-        border-right: 2px solid #8b55c9;
-        padding-top: 2rem;
+    background: #e1daf8;
+    border-right: 2px solid #8b55c9;
+    padding-top: 2rem;
     }
+
     section[data-testid="stSidebar"] * {
         color: #240a3f !important;
         font-weight: 500;
@@ -196,7 +199,6 @@ tarte_css = """
 """
 st.markdown(tarte_css, unsafe_allow_html=True)
 
-
 # ===============================================================
 # Helper: Open Excel
 # ===============================================================
@@ -213,6 +215,12 @@ def open_excel_file(excel_path=EXCEL_PATH):
     except Exception as e:
         st.error(f"❌ Could not open Excel file.\n\n{e}")
 
+# ===============================================================
+# Helper: image → base64 (for logo)
+# ===============================================================
+def load_image_base64(path: str) -> str:
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
 
 # ===============================================================
 # 1. OCR AND DOCX EXTRACTION
@@ -239,7 +247,6 @@ def extract_text_from_docx(docx_file):
 
     return "\n".join(result)
 
-
 # ===============================================================
 # 2. PARSE FIELDS
 # ===============================================================
@@ -258,7 +265,6 @@ def parse_vendor_doc(text):
                 if len(parts) == 2:
                     fields[key] = parts[1].strip()
     return fields
-
 
 # ===============================================================
 # 3. DATABASE
@@ -305,7 +311,6 @@ def save_to_db(fields):
 
     conn.close()
 
-
 def search_db(keyword):
     conn = sqlite3.connect("sku_catalog.db")
     df = pd.read_sql_query(f"""
@@ -317,14 +322,12 @@ def search_db(keyword):
     conn.close()
     return df
 
-
 def clear_database():
     conn = sqlite3.connect("sku_catalog.db")
     cur = conn.cursor()
     cur.execute("DELETE FROM sku_catalog")
     conn.commit()
     conn.close()
-
 
 # ===============================================================
 # 4. SAVE TO EXCEL
@@ -371,11 +374,28 @@ def save_to_excel(fields):
     shutil.move(temp_path, EXCEL_PATH)
     st.success("💾 Saved to Excel successfully!")
 
+# ===============================================================
+# SIDEBAR NAVIGATION + LOGO
+# ===============================================================
+# Sidebar logo (Option 1 – logo above title)
+logo_base64 = None
+try:
+    logo_base64 = load_image_base64("data/images/tarte_logo.png")
+except FileNotFoundError:
+    logo_base64 = None
 
-# ===============================================================
-# SIDEBAR NAVIGATION
-# ===============================================================
-st.sidebar.title("💜 Tarte SKU System")
+if logo_base64:
+    st.sidebar.markdown(
+        f"""
+        <div style="text-align:center; margin-bottom:10px;">
+            <img src="data:image/png;base64,{logo_base64}"
+                 style="width:140px; margin-top:-10px;">
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+st.sidebar.title(" Tarte SKU System")
 
 page = st.sidebar.radio(
     "Navigate",
@@ -385,7 +405,6 @@ page = st.sidebar.radio(
 if st.sidebar.button("📂 Open Excel File"):
     open_excel_file()
 
-
 # ===============================================================
 # HEADER BANNER (SHARED)
 # ===============================================================
@@ -394,7 +413,9 @@ st.markdown(
     <div class="tarte-header">
         <div class="tarte-header-left">
             <p class="tarte-header-title">Tarte AI-Powered SKU Intake</p>
-            <p class="tarte-header-sub">Designed for production retains, lab samples, and go to market traceability.</p>
+            <p class="tarte-header-sub">
+                Designed for production retains, lab samples, and go to market traceability.
+            </p>
         </div>
         <div>
             <span class="tarte-header-pill">
@@ -410,8 +431,6 @@ st.markdown(
 # HOME PAGE
 # ===============================================================
 if page == "Home":
-
-    st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
     st.subheader("✨ Welcome")
 
     st.write(
@@ -426,9 +445,6 @@ This dashboard automates the workflow for cataloging Tarte production retains:
 • Use the chatbot to trigger actions or search data  
         """
     )
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
 
 # ===============================================================
 # UPLOAD PAGE
@@ -479,7 +495,6 @@ elif page == "Upload":
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-
 # ===============================================================
 # CAMERA PAGE
 # ===============================================================
@@ -503,7 +518,6 @@ elif page == "Camera":
             save_to_excel(fields)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
 
 # ===============================================================
 # CHATBOT PAGE
@@ -572,7 +586,6 @@ elif page == "Chatbot":
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-
 # ===============================================================
 # DATABASE PAGE
 # ===============================================================
@@ -599,7 +612,6 @@ elif page == "Database":
         st.success("Database cleared.")
 
     st.markdown("</div>", unsafe_allow_html=True)
-
 
 # ===============================================================
 # EXCEL TOOLS
