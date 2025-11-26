@@ -46,11 +46,13 @@ tarte_css = """
 
     /* MAIN CONTENT WIDTH */
     div.block-container {
-        max-width: 1180px;
-        padding-top: 2.5rem;
-        padding-bottom: 2.5rem;
-        margin: 0 auto;
-    }
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+
 
     /* TOP TOOLBAR */
     header[data-testid="stHeader"] {
@@ -63,6 +65,34 @@ tarte_css = """
     border-right: 2px solid #8b55c9;
     padding-top: 2rem;
     }
+
+    /* Remove radio bullets */
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
+        display: none !important;        /* hides the radio button circle */
+    }
+
+    /* Style menu items */
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label {
+        padding: 10px 14px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 17px;
+        font-weight: 600;
+        color: #2A0F44 !important;
+    }
+
+    /* Hover effect */
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+        background: #FFFFFF !important;
+        color: #2A0F44 !important;   /* keeps text readable */
+    }
+
+    /* Selected item (fix) */
+    section[data-testid="stSidebar"] div[role="radiogroup"] [aria-checked="true"] {
+        background: rgba(255, 255, 255, 0.5) !important;
+        border-radius: 12px;
+    }
+
 
     section[data-testid="stSidebar"] * {
         color: #240a3f !important;
@@ -173,20 +203,25 @@ tarte_css = """
     }
 
     /* GOLD CTA BUTTONS (main area) */
-    div.stButton > button {
-        background: linear-gradient(135deg, #f3cc5d, #e4a93a) !important;
-        color: #3a2308 !important;
-        border-radius: 999px !important;
-        padding: 0.5rem 1.3rem !important;
-        border: none !important;
-        font-weight: 700 !important;
-        font-size: 14px !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.18);
-    }
-    div.stButton > button:hover {
-        background: linear-gradient(135deg, #ffe27b, #f5c65c) !important;
-        transform: translateY(-1px);
-    }
+   /* Sidebar open excel button — white version */
+section[data-testid="stSidebar"] div.stButton > button {
+    width: 100%;
+    background: #ffffff !important;          /* WHITE BACKGROUND */
+    color: #2A0F44 !important;                /* Tarte purple text */
+    border-radius: 999px !important;
+    border: 2px solid #d0c2e8 !important;     /* Soft purple border */
+    font-weight: 700 !important;
+    padding: 0.6rem 1.2rem;
+    font-size: 15px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);   /* Light shadow */
+}
+
+/* Hover state */
+section[data-testid="stSidebar"] div.stButton > button:hover {
+    background: #f4efff !important;           /* soft lilac hover */
+    border-color: #b9a6dd !important;
+    transform: translateY(-1px);
+}
 
     /* CHAT BUBBLES */
     .stChatMessage {
@@ -194,6 +229,54 @@ tarte_css = """
         border-radius: 12px !important;
         padding: 12px !important;
     }
+
+    /* MAIN PAGE WHITE CONTENT BOX */
+.tarte-content-box {
+    background: #ffffff;
+    padding: 30px 30px 40px 30px;
+    border-radius: 22px;
+    border: 1px solid #e6d9ff;
+    box-shadow: 0 6px 18px rgba(70, 40, 110, 0.10);
+    margin-top: 20px;
+    margin-bottom: 40px;
+
+    /* Suggested prompts container */
+    .tarte-suggestions {
+        background: #ffffff;
+        padding: 12px 18px;
+        border-radius: 12px;
+        border: 1px solid #ddd3ff;
+        margin-bottom: 14px;
+        font-size: 15px;
+        color: #3c2a67;
+    }
+
+    .tarte-suggestions span {
+        background: #f3edff;
+        padding: 6px 12px;
+        border-radius: 8px;
+        margin-right: 8px;
+        cursor: pointer;
+        border: 1px solid #dfccff;
+    }
+
+    .tarte-suggestions span:hover {
+        background: #e6dbff;
+    }
+    
+    /* UNIVERSAL PAGE CONTENT BOX */
+    .tarte-page-box {
+        background: #ffffff;
+        padding: 32px 40px;
+        border-radius: 22px;
+        border: 1px solid #e8dfff;
+        box-shadow: 0 8px 20px rgba(80, 45, 120, 0.10);
+        margin-top: 25px;
+        margin-bottom: 35px;
+    }
+
+
+}
 
 </style>
 """
@@ -395,13 +478,17 @@ if logo_base64:
         unsafe_allow_html=True,
     )
 
-st.sidebar.title(" Tarte SKU System")
+# 2. SIDEBAR TITLE
+st.sidebar.title("Tarte SKU System")
 
+# 3. NAVIGATION (radio menu)
 page = st.sidebar.radio(
-    "Navigate",
-    ["Home", "Upload", "Camera", "Chatbot", "Database", "Excel Tools"]
+    "",
+    ["Home", "Upload", "Camera", "Chatbot", "Database", "Excel Tools"],
+    label_visibility="collapsed"   # ⭐ HIDES LABEL + removes bullet/dot
 )
 
+# 4. OPEN EXCEL BUTTON
 if st.sidebar.button("📂 Open Excel File"):
     open_excel_file()
 
@@ -450,48 +537,51 @@ This dashboard automates the workflow for cataloging Tarte production retains:
 # UPLOAD PAGE
 # ===============================================================
 elif page == "Upload":
+    st.markdown('<div class="tarte-page-box">', unsafe_allow_html=True)
+    with st.container():
 
-    st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
-    st.header("📄 Upload Vendor Documents")
+        st.header("📄 Upload Vendor Documents")
 
-    files = st.file_uploader(
-        "Upload one or more files",
-        type=["docx", "jpg", "jpeg", "png"],
-        accept_multiple_files=True,
-        help="Upload retain specs, artwork proofs, or vendor docs."
-    )
+        st.subheader("✨ Welcome")
 
-    collected_fields = []
+        files = st.file_uploader(
+            "Upload one or more files",
+            type=["docx", "jpg", "jpeg", "png"],
+            accept_multiple_files=True,
+            help="Upload retain specs, artwork proofs, or vendor docs."
+        )
 
-    if files:
-        st.success(f"{len(files)} files uploaded.")
+        collected_fields = []
 
-        for idx, f in enumerate(files, start=1):
-            st.markdown("---")
-            st.subheader(f"📄 File {idx}: {f.name}")
+        if files:
+            st.success(f"{len(files)} files uploaded.")
 
-            text = (
-                extract_text_from_docx(f)
-                if f.name.lower().endswith(".docx")
-                else extract_text_from_image(f)
-            )
+            for idx, f in enumerate(files, start=1):
+                st.markdown("---")
+                st.subheader(f"📄 File {idx}: {f.name}")
 
-            with st.expander("🔎 Extracted text preview"):
-                st.text(text)
+                text = (
+                    extract_text_from_docx(f)
+                    if f.name.lower().endswith(".docx")
+                    else extract_text_from_image(f)
+                )
 
-            fields = parse_vendor_doc(text)
-            st.json(fields)
-            collected_fields.append(fields)
+                with st.expander("🔎 Extracted text preview"):
+                    st.text(text)
 
-            if st.button(f"💾 Save {f.name}", key=f"save_{idx}"):
-                save_to_db(fields)
-                save_to_excel(fields)
+                fields = parse_vendor_doc(text)
+                st.json(fields)
+                collected_fields.append(fields)
 
-        if collected_fields and st.button("🔥 Process all files"):
-            for flds in collected_fields:
-                save_to_db(flds)
-                save_to_excel(flds)
-            st.success("All files processed and synced.")
+                if st.button(f"💾 Save {f.name}", key=f"save_{idx}"):
+                    save_to_db(fields)
+                    save_to_excel(fields)
+
+            if collected_fields and st.button("🔥 Process all files"):
+                for flds in collected_fields:
+                    save_to_db(flds)
+                    save_to_excel(flds)
+                st.success("All files processed and synced.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -499,8 +589,6 @@ elif page == "Upload":
 # CAMERA PAGE
 # ===============================================================
 elif page == "Camera":
-
-    st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
     st.header("📸 Capture Vendor Document")
 
     photo = st.camera_input("Take a photo of the retain or vendor sheet")
@@ -524,9 +612,22 @@ elif page == "Camera":
 # ===============================================================
 elif page == "Chatbot":
 
-    st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
+    # White content box wrapper
+    st.markdown('<div class="tarte-chatbox">', unsafe_allow_html=True)
+
     st.header("🤖 Chatbot Mode")
 
+    # Suggested prompt bar
+    st.markdown("""
+        <div class="tarte-suggestions">
+            <strong>Try:</strong>
+            <span onclick="document.querySelector('input[type=text]').value='process latest'">process latest</span>
+            <span onclick="document.querySelector('input[type=text]').value='search concealer'">search concealer</span>
+            <span onclick="document.querySelector('input[type=text]').value='show database'">show database</span>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -534,12 +635,13 @@ elif page == "Chatbot":
         with st.chat_message(m["role"]):
             st.write(m["content"])
 
+    # Chat input
     user_input = st.chat_input("Ask me to process latest, search, or show database")
 
     if user_input:
-
         st.session_state.messages.append({"role": "user", "content": user_input})
 
+        # logic unchanged …
         if "process latest" in user_input.lower():
             folder = "data/specs/"
             files = [
@@ -575,12 +677,8 @@ elif page == "Chatbot":
             st.dataframe(df)
             reply = "Full database view."
 
-        elif "clear database" in user_input.lower():
-            clear_database()
-            reply = "Database cleared."
-
         else:
-            reply = "Unknown command. Try: process latest, search <term>, show database, or clear database."
+            reply = "Unknown command. Try: process latest, search <term>, or show database."
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
@@ -590,13 +688,36 @@ elif page == "Chatbot":
 # DATABASE PAGE
 # ===============================================================
 elif page == "Database":
-
-    st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
     st.header("📊 Database Viewer")
+
+    # ---- White styled Clear Database button ----
+    st.markdown("""
+<style>
+
+/* Target ALL stButtons inside the Database page */
+div[data-testid="stButton"] > button[kind="secondary"] {
+    background: #ffffff !important;        /* BUTTON COLOR */
+    color: #2A0F44 !important;             /* TEXT COLOR */
+    border: 2px solid #d0c2e8 !important;  /* BORDER */
+    border-radius: 10px !important;
+    padding: 8px 16px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+
+/* Hover */
+div[data-testid="stButton"] > button[kind="secondary"]:hover {
+    background: #f4f0ff !important;        /* HOVER COLOR */
+    border-color: #b8a7dd !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 
     init_db()
 
-    search = st.text_input("Search SKU, lot, or product description")
+    search = st.text_input("", placeholder="🔍 Search")
 
     if search:
         df = search_db(search)
@@ -607,19 +728,41 @@ elif page == "Database":
         conn.close()
         st.dataframe(df)
 
+    # --- Replace original button here ---
+    st.markdown('<div id="clear-db">', unsafe_allow_html=True)
     if st.button("🧹 Clear database"):
         clear_database()
         st.success("Database cleared.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ===============================================================
 # EXCEL TOOLS
 # ===============================================================
 elif page == "Excel Tools":
-
-    st.markdown('<div class="tarte-card">', unsafe_allow_html=True)
     st.header("📂 Excel Tools")
+    st.markdown("""
+<style>
+
+/* Style ALL main-area buttons (not sidebar buttons) */
+div.block-container div[data-testid="stButton"] > button {
+    background: #ffffff !important;          /* White */
+    color: #2A0F44 !important;               /* Tarte purple text */
+    border: 2px solid #d0c2e8 !important;    /* Soft purple border */
+    border-radius: 10px !important;
+    padding: 8px 16px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+
+/* Hover */
+div.block-container div[data-testid="stButton"] > button:hover {
+    background: #f4f0ff !important;          /* lilac hover */
+    border-color: #b8a7dd !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 
     st.write(f"Excel file: `{EXCEL_PATH}`")
     st.write(f"Sheet name: `{EXCEL_SHEET_NAME}`")
