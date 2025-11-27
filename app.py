@@ -15,6 +15,7 @@ import shutil
 import platform
 import subprocess
 import base64
+import re
 
 # Try to import barcode / QR decoder
 try:
@@ -37,7 +38,7 @@ st.set_page_config(
 )
 
 # ===============================================================
-# LUXURY TARTE UI THEME
+# LUXURY TARTE UI THEME (FULL CSS FROM USER)
 # ===============================================================
 
 tarte_css = """
@@ -200,6 +201,24 @@ tarte_css = """
         padding: 12px !important;
     }
 
+    /* MAIN PAGE BUTTONS (not sidebar) */
+    div.block-container div[data-testid="stButton"] > button {
+        background: #ffffff !important;
+        color: #2A0F44 !important;
+        border: 2px solid #d0c2e8 !important;
+        border-radius: 12px !important;
+        padding: 8px 16px !important;
+        font-weight: 700 !important;
+        font-size: 15px !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    }
+
+    div.block-container div[data-testid="stButton"] > button:hover {
+        background: #f5efff !important;
+        border-color: #b9a6dd !important;
+        transform: translateY(-1px);
+    }
+
 </style>
 """
 st.markdown(tarte_css, unsafe_allow_html=True)
@@ -221,22 +240,20 @@ def open_excel_file(excel_path=EXCEL_PATH):
         st.error(f"❌ Could not open Excel file.\n\n{e}")
 
 # ===============================================================
-# Helper: image → base64 (for logo)
+# Helper: Image Base64 Loader
 # ===============================================================
 def load_image_base64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
 # ===============================================================
-# 1. OCR, BARCODE, DOCX EXTRACTION
+# 1. OCR / BARCODE / DOCX EXTRACTION
 # ===============================================================
 def extract_text_from_image(image_file):
-    """OCR text from image (file-like or path)."""
     img = Image.open(image_file)
     return pytesseract.image_to_string(img)
 
 def extract_barcodes_from_image(image_file):
-    """Decode barcodes/QR codes from an image (if pyzbar is installed)."""
     if not BARCODE_AVAILABLE:
         return []
     img = Image.open(image_file).convert("L")
@@ -245,19 +262,16 @@ def extract_barcodes_from_image(image_file):
     for c in codes:
         try:
             values.append(c.data.decode("utf-8"))
-        except Exception:
+        except:
             continue
     return values
 
 def extract_text_from_docx(docx_file):
-    """Extract both paragraph and table text from DOCX."""
     doc = Document(docx_file)
     result = []
-
     for para in doc.paragraphs:
         if para.text.strip():
             result.append(para.text.strip())
-
     for table in doc.tables:
         for row in table.rows:
             cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
@@ -265,14 +279,12 @@ def extract_text_from_docx(docx_file):
                 result.append(f"{cells[0]} {cells[1]}")
             elif cells:
                 result.append(" | ".join(cells))
-
     return "\n".join(result)
 
 # ===============================================================
-# 2. PARSE FIELDS
+# 2. PARSE FIELDS (Normal vendor parsing)
 # ===============================================================
 def parse_vendor_doc(text):
-    """Parse SKU-related fields from the extracted text."""
     fields = {
         "Product Description": None,
         "Batch/Lot No.": None,
@@ -290,14 +302,69 @@ def parse_vendor_doc(text):
     return fields
 
 # ===============================================================
-# 2b. REVIEW UI (Side-by-side)
+# 2B — AI FIELD PREDICTION (NO API · regex + heuristics)
+# ===============================================================
+def predict_missing_fields(raw_text, fields):
+    """
+    Enhance vendor field extraction using regex + heuristics.
+    Fills in SKU, Batch/Lot, Date, Qty, and Product Description when possible.
+    """
+    text = raw_text.lower()
+
+    # --- SKU ---
+    if not fields.get("SKU"):
+        sku_match = re.search(r"(sku|style|item)[^\w]?[\s#:]*([a-z0-9\-]{3,20})", text)
+        if sku_match:
+            fields["SKU"] = sku_match.group(2).upper()
+
+    # --- LOT / BATCH ---
+    if not fields.get("Batch/Lot No."):
+        lot_match = re.search(r"(lot|batch|code|lote)[^\w]?[\s#:]*([a-z0-9\-]{3,20})", text)
+        if lot_match:
+            fields["Batch/Lot No."] = lot_match.group(2).upper()
+
+    # --- DATE ---
+    if not fields.get("Date"):
+        # dd/mm/yyyy, mm/dd/yyyy, yyyy-mm-dd, 2024.03.15, etc.
+        date_match = re.search(
+            r"((\d{4}[-./]\d{1,2}[-./]\d{1,2})|(\d{1,2}[-./]\d{1,2}[-./]\d{2,4}))",
+            text
+        )
+        if date_match:
+            fields["Date"] = date_match.group(1)
+
+    # --- QTY ---
+    if not fields.get("Qty"):
+        qty_match = re.search(r"(qty|quantity|pcs|units|pack)[^\d]*(\d{1,5})", text)
+        if qty_match:
+            fields["Qty"] = qty_match.group(2)
+
+    # --- PRODUCT DESCRIPTION ---
+    if not fields.get("Product Description"):
+        desc_match = re.search(
+            r"(lipstick|concealer|foundation|palette|mascara|gel|serum|cream|gloss)[a-z0-9\s\-]*",
+            text
+        )
+        if desc_match:
+            fields["Product Description"] = desc_match.group(0).title()
+        else:
+            # Fallback: first line that's not too short/long
+            for line in raw_text.splitlines():
+                line_stripped = line.strip()
+                if 20 <= len(line_stripped) <= 80:
+                    fields["Product Description"] = line_stripped
+                    break
+
+    return fields
+
+# ===============================================================
+# 2C. REVIEW UI (Side-by-side)
 # ===============================================================
 def review_fields_ui(initial_fields, raw_text, key_prefix=""):
     """
     Side-by-side review:
     Left: raw extracted text
     Right: editable fields
-    Returns edited_fields dict with same keys as initial_fields.
     """
     col1, col2 = st.columns(2)
 
@@ -369,7 +436,9 @@ def save_to_db(fields):
     exists = cur.fetchone()[0]
 
     if exists:
-        st.warning(f"⚠️ Duplicate SKU {fields['SKU']} / Lot {fields['Batch/Lot No.']} — skipped.")
+        st.warning(
+            f"⚠️ Duplicate SKU {fields['SKU']} / Lot {fields['Batch/Lot No.']} — skipped."
+        )
     else:
         cur.execute("""
         INSERT INTO sku_catalog (product_desc, batch_lot, date, sku, qty)
@@ -422,14 +491,14 @@ def save_to_excel(fields):
 
     ws = wb[EXCEL_SHEET_NAME]
 
-    # Map by header names (row 1)
+    # Map headers
     excel_headers = {}
     for col in range(1, ws.max_column + 1):
         header_value = ws.cell(row=1, column=col).value
         if header_value:
             excel_headers[header_value.lower()] = col
 
-    # Map your parsed field names to actual Excel headers
+    # Map parsed fields to Excel columns
     mapping = {
         "product description": fields["Product Description"],
         "lot #": fields["Batch/Lot No."],
@@ -524,7 +593,7 @@ This dashboard automates the workflow for cataloging Tarte production retains:
     )
 
 # ===============================================================
-# UPLOAD PAGE (with review + barcode)
+# UPLOAD PAGE (with review + barcode + AI prediction)
 # ===============================================================
 elif page == "Upload":
 
@@ -545,7 +614,7 @@ elif page == "Upload":
             st.markdown("---")
             st.subheader(f"📄 File {idx}: {f.name}")
 
-            # 1) Extract text
+            # 1) Extract text + barcodes
             if f.name.lower().endswith(".docx"):
                 text = extract_text_from_docx(f)
                 barcodes = []
@@ -556,17 +625,20 @@ elif page == "Upload":
             if barcodes:
                 st.info(f"🔍 Detected barcodes / QR codes: {', '.join(barcodes)}")
 
-            # 2) Parse fields
+            # 2) Parse fields (basic)
             fields = parse_vendor_doc(text)
 
-            # 3) If no SKU but barcode exists, use first barcode as SKU
+            # 3) AI-based field prediction (no API)
+            fields = predict_missing_fields(text, fields)
+
+            # 4) If still no SKU but barcode exists, use first barcode as SKU
             if barcodes and not fields.get("SKU"):
                 fields["SKU"] = barcodes[0]
 
-            # 4) Review UI (side-by-side)
+            # 5) Review UI (side-by-side)
             edited_fields = review_fields_ui(fields, text, key_prefix=f"file_{idx}")
 
-            # 5) Confirm / Cancel
+            # 6) Confirm / Cancel
             col_a, col_b = st.columns(2)
             with col_a:
                 confirm = st.button(
@@ -588,7 +660,7 @@ elif page == "Upload":
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
-# CAMERA PAGE (with review + barcode)
+# CAMERA PAGE (with review + barcode + AI prediction)
 # ===============================================================
 elif page == "Camera":
 
@@ -605,13 +677,18 @@ elif page == "Camera":
 
         # 2) Parse
         fields = parse_vendor_doc(text)
+
+        # 3) AI-based prediction
+        fields = predict_missing_fields(text, fields)
+
+        # 4) If still no SKU but barcode exists, use first barcode as SKU
         if barcodes and not fields.get("SKU"):
             fields["SKU"] = barcodes[0]
 
-        # 3) Review UI
+        # 5) Review UI
         edited_fields = review_fields_ui(fields, text, key_prefix="camera")
 
-        # 4) Confirm / Cancel
+        # 6) Confirm / Cancel
         col_a, col_b = st.columns(2)
         with col_a:
             confirm = st.button("✅ Confirm & Save from camera")
@@ -627,7 +704,7 @@ elif page == "Camera":
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
-# CHATBOT PAGE
+# CHATBOT PAGE (with AI prediction)
 # ===============================================================
 elif page == "Chatbot":
 
@@ -647,7 +724,9 @@ elif page == "Chatbot":
         st.session_state.messages.append({"role": "user", "content": user_input})
         reply = ""
 
-        if "process latest" in user_input.lower():
+        lower = user_input.lower()
+
+        if "process latest" in lower:
             folder = "data/specs/"
             files = [
                 os.path.join(folder, f)
@@ -670,7 +749,10 @@ elif page == "Chatbot":
                         fh.seek(0)
                         barcodes = extract_barcodes_from_image(fh)
 
+                # Parse + AI prediction
                 fields = parse_vendor_doc(text)
+                fields = predict_missing_fields(text, fields)
+
                 if barcodes and not fields.get("SKU"):
                     fields["SKU"] = barcodes[0]
 
@@ -679,25 +761,28 @@ elif page == "Chatbot":
 
                 reply = f"Processed and saved latest file: {os.path.basename(latest)}"
 
-        elif "search" in user_input.lower():
+        elif "search" in lower:
             term = user_input.split("search", 1)[1].strip()
             df = search_db(term)
             st.dataframe(df)
             reply = f"Search results for '{term}'."
 
-        elif "show database" in user_input.lower():
+        elif "show database" in lower:
             conn = sqlite3.connect("sku_catalog.db")
             df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
             conn.close()
             st.dataframe(df)
             reply = "Full database view."
 
-        elif "clear database" in user_input.lower():
+        elif "clear database" in lower:
             clear_database()
             reply = "Database cleared."
 
         else:
-            reply = "Unknown command. Try: `process latest`, `search <term>`, `show database`, or `clear database`."
+            reply = (
+                "Unknown command. Try: `process latest`, `search <term>`, "
+                "`show database`, or `clear database`."
+            )
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
@@ -745,3 +830,4 @@ elif page == "Excel Tools":
     st.write("Tip: close the workbook before running updates from this dashboard.")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
