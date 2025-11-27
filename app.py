@@ -583,6 +583,36 @@ def save_to_excel(fields):
     shutil.move(temp_path, EXCEL_PATH)
     st.success("💾 Saved to Excel successfully!")
 
+# ===============================================================
+# 5. GALLERY IMAGE SAVER (SKU + LOT naming)
+# ===============================================================
+def save_image_to_gallery(fields, file_obj, original_name):
+    """
+    Save an image associated with a retain into data/gallery using:
+    SKU_<SKU>_LOT_<LOT>.ext
+    """
+    gallery_folder = "data/gallery"
+    os.makedirs(gallery_folder, exist_ok=True)
+
+    sku = fields.get("SKU") or "NOSKU"
+    lot = fields.get("Batch/Lot No.") or "NOLOT"
+
+    # Clean values to avoid weird filename chars
+    sku_safe = re.sub(r"[^A-Za-z0-9\-]", "", str(sku))
+    lot_safe = re.sub(r"[^A-Za-z0-9\-]", "", str(lot))
+
+    ext = os.path.splitext(original_name)[1].lower()
+    if ext not in [".jpg", ".jpeg", ".png"]:
+        ext = ".jpg"
+
+    filename = f"SKU_{sku_safe}_LOT_{lot_safe}{ext}"
+    path = os.path.join(gallery_folder, filename)
+
+    with open(path, "wb") as out:
+        out.write(file_obj.getbuffer())
+
+    return path
+
 # Ensure DB exists
 init_db()
 
@@ -610,7 +640,7 @@ st.sidebar.title("Tarte SKU System")
 
 page = st.sidebar.radio(
     "",
-    ["Home", "Upload", "Camera", "Chatbot", "Database", "Excel Tools"],
+    ["Home", "Upload", "Camera", "Chatbot", "Database", "Gallery", "Excel Tools"],
     label_visibility="collapsed"
 )
 
@@ -659,7 +689,7 @@ This dashboard automates the workflow for cataloging Tarte production retains:
     )
 
 # ===============================================================
-# UPLOAD PAGE (with review + barcode + AI prediction + duplicate UI)
+# UPLOAD PAGE (with review + barcode + AI prediction + duplicate UI + gallery save)
 # ===============================================================
 elif page == "Upload":
 
@@ -684,9 +714,11 @@ elif page == "Upload":
             if f.name.lower().endswith(".docx"):
                 text = extract_text_from_docx(f)
                 barcodes = []
+                is_image_file = False
             else:
                 text = extract_text_from_image(f)
                 barcodes = extract_barcodes_from_image(f)
+                is_image_file = True
 
             if barcodes:
                 st.info(f"🔍 Detected barcodes / QR codes: {', '.join(barcodes)}")
@@ -741,9 +773,14 @@ elif page == "Upload":
                     ):
                         save_to_db(edited_fields)
                         save_to_excel(edited_fields)
+                        # Save gallery image if this was an image file
+                        if is_image_file:
+                            save_image_to_gallery(edited_fields, f, f.name)
                 else:
                     save_to_db(edited_fields)
                     save_to_excel(edited_fields)
+                    if is_image_file:
+                        save_image_to_gallery(edited_fields, f, f.name)
 
             elif cancel:
                 st.info(f"⏹ Skipped saving for {f.name}.")
@@ -751,7 +788,7 @@ elif page == "Upload":
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
-# CAMERA PAGE (with review + barcode + AI prediction + duplicate UI)
+# CAMERA PAGE (with review + barcode + AI prediction + duplicate UI + gallery save)
 # ===============================================================
 elif page == "Camera":
 
@@ -805,9 +842,11 @@ elif page == "Camera":
                 if st.button("🔓 Override & Force Save", key="override_camera"):
                     save_to_db(edited_fields)
                     save_to_excel(edited_fields)
+                    save_image_to_gallery(edited_fields, photo, "camera.jpg")
             else:
                 save_to_db(edited_fields)
                 save_to_excel(edited_fields)
+                save_image_to_gallery(edited_fields, photo, "camera.jpg")
 
         elif cancel:
             st.info("⏹ Camera capture discarded.")
@@ -858,11 +897,13 @@ elif page == "Chatbot":
                     with open(latest, "rb") as fh:
                         text = extract_text_from_docx(fh)
                     barcodes = []
+                    is_image_file = False
                 else:
                     with open(latest, "rb") as fh:
                         text = extract_text_from_image(fh)
                         fh.seek(0)
                         barcodes = extract_barcodes_from_image(fh)
+                    is_image_file = True
 
                 # Parse + AI prediction
                 fields = parse_vendor_doc(text)
@@ -871,18 +912,28 @@ elif page == "Chatbot":
                 if barcodes and not fields.get("SKU"):
                     fields["SKU"] = barcodes[0]
 
-                # Duplicate handling: same as UI, but always allows override via command
+                # Duplicate handling: do not auto-save duplicates here
                 duplicate_row = check_duplicate(fields)
                 if duplicate_row:
                     reply = (
                         f"⚠️ Duplicate detected for SKU {fields.get('SKU')} / "
                         f"Lot {fields.get('Batch/Lot No.')} — not saved.\n\n"
-                        "Use the UI upload/camera flow to override and force-save if needed."
+                        "Use the Upload or Camera page to review and override if needed."
                     )
                 else:
                     save_to_db(fields)
                     save_to_excel(fields)
                     reply = f"Processed and saved latest file: {os.path.basename(latest)}"
+                    # Optional: auto-gallery save from chatbot if image
+                    if is_image_file:
+                        # Re-open file for saving
+                        with open(latest, "rb") as fh:
+                            class _Tmp:
+                                def __init__(self, b): self._b = b
+                                def getbuffer(self): return self._b
+                            buf = fh.read()
+                            tmp_file = _Tmp(buf)
+                            save_image_to_gallery(fields, tmp_file, os.path.basename(latest))
 
         # --- COMMAND: search <term> ---
         elif "search" in lower:
@@ -1019,6 +1070,89 @@ elif page == "Database":
         st.success("Database cleared.")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+# ===============================================================
+# GALLERY PAGE (Pinterest-style grid of processed retains)
+# ===============================================================
+elif page == "Gallery":
+
+    st.header("🖼️ Processed Retains Gallery")
+    st.write("A visual grid of all saved retains, organized by SKU and lot.")
+
+    gallery_folder = "data/gallery"
+
+    if not os.path.exists(gallery_folder):
+        os.makedirs(gallery_folder)
+
+    images = [
+        os.path.join(gallery_folder, img)
+        for img in os.listdir(gallery_folder)
+        if img.lower().endswith((".jpg", ".jpeg", ".png"))
+    ]
+
+    if not images:
+        st.info("No retains in the gallery yet — save from Upload or Camera first.")
+    else:
+        cols = st.columns(4)
+
+        # Load DB once
+        conn = sqlite3.connect("sku_catalog.db")
+        db_df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
+        conn.close()
+
+        for idx, img_path in enumerate(sorted(images)):
+            col = cols[idx % 4]
+
+            with col:
+                st.markdown(
+                    """
+                    <div style="
+                        background: #ffffffaa;
+                        border-radius: 16px;
+                        padding: 12px;
+                        margin-bottom: 20px;
+                        box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+                        backdrop-filter: blur(6px);
+                    ">
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.image(img_path, use_column_width=True)
+
+                # Try to parse SKU + LOT from filename: SKU_<SKU>_LOT_<LOT>.ext
+                basename = os.path.basename(img_path)
+                match = re.match(r"SKU_(.+)_LOT_(.+)\.[^.]+$", basename, re.IGNORECASE)
+
+                display_info = None
+                if match:
+                    sku_from_file = match.group(1)
+                    lot_from_file = match.group(2)
+
+                    # Match against DB
+                    subset = db_df[
+                        (db_df["sku"].astype(str) == sku_from_file)
+                        & (db_df["batch_lot"].astype(str) == lot_from_file)
+                    ]
+                    if not subset.empty:
+                        display_info = subset.iloc[0]
+
+                if display_info is not None:
+                    st.markdown(
+                        f"""
+                        <p style="font-size:14px; margin-top:8px;">
+                        <b>SKU:</b> {display_info['sku']}<br>
+                        <b>Lot:</b> {display_info['batch_lot']}<br>
+                        <b>Date:</b> {display_info['date']}<br>
+                        <b>Qty:</b> {display_info['qty']}
+                        </p>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.caption("No matching record found for this image.")
+
+                st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
 # EXCEL TOOLS
