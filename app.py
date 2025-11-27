@@ -38,9 +38,8 @@ st.set_page_config(
 )
 
 # ===============================================================
-# LUXURY TARTE UI THEME (FULL CSS FROM USER)
+# LUXURY TARTE UI THEME (YOUR FULL CSS)
 # ===============================================================
-
 tarte_css = """
 <style>
 
@@ -224,7 +223,7 @@ tarte_css = """
 st.markdown(tarte_css, unsafe_allow_html=True)
 
 # ===============================================================
-# Helper: Open Excel
+# Helpers
 # ===============================================================
 def open_excel_file(excel_path=EXCEL_PATH):
     try:
@@ -239,9 +238,6 @@ def open_excel_file(excel_path=EXCEL_PATH):
     except Exception as e:
         st.error(f"❌ Could not open Excel file.\n\n{e}")
 
-# ===============================================================
-# Helper: Image Base64 Loader
-# ===============================================================
 def load_image_base64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
@@ -262,7 +258,7 @@ def extract_barcodes_from_image(image_file):
     for c in codes:
         try:
             values.append(c.data.decode("utf-8"))
-        except:
+        except Exception:
             continue
     return values
 
@@ -282,7 +278,7 @@ def extract_text_from_docx(docx_file):
     return "\n".join(result)
 
 # ===============================================================
-# 2. PARSE FIELDS (Normal vendor parsing)
+# 2. PARSE FIELDS (normal vendor parsing)
 # ===============================================================
 def parse_vendor_doc(text):
     fields = {
@@ -302,7 +298,7 @@ def parse_vendor_doc(text):
     return fields
 
 # ===============================================================
-# 2B — AI FIELD PREDICTION (NO API · regex + heuristics)
+# 2B. AI FIELD PREDICTION (NO API · regex + heuristics)
 # ===============================================================
 def predict_missing_fields(raw_text, fields):
     """
@@ -325,7 +321,6 @@ def predict_missing_fields(raw_text, fields):
 
     # --- DATE ---
     if not fields.get("Date"):
-        # dd/mm/yyyy, mm/dd/yyyy, yyyy-mm-dd, 2024.03.15, etc.
         date_match = re.search(
             r"((\d{4}[-./]\d{1,2}[-./]\d{1,2})|(\d{1,2}[-./]\d{1,2}[-./]\d{2,4}))",
             text
@@ -409,7 +404,7 @@ def review_fields_ui(initial_fields, raw_text, key_prefix=""):
     return edited
 
 # ===============================================================
-# 3. DATABASE
+# 3. DATABASE + DUPLICATE CHECK
 # ===============================================================
 def init_db():
     conn = sqlite3.connect("sku_catalog.db")
@@ -427,33 +422,45 @@ def init_db():
     conn.close()
 
 def save_to_db(fields):
+    """
+    Pure insert. No duplicate logic here.
+    Duplicate handling is done at the UI layer via check_duplicate().
+    """
     conn = sqlite3.connect("sku_catalog.db")
     cur = conn.cursor()
-
     cur.execute("""
-    SELECT COUNT(*) FROM sku_catalog WHERE sku = ? AND batch_lot = ?
-    """, (fields["SKU"], fields["Batch/Lot No."]))
-    exists = cur.fetchone()[0]
-
-    if exists:
-        st.warning(
-            f"⚠️ Duplicate SKU {fields['SKU']} / Lot {fields['Batch/Lot No.']} — skipped."
-        )
-    else:
-        cur.execute("""
         INSERT INTO sku_catalog (product_desc, batch_lot, date, sku, qty)
         VALUES (?, ?, ?, ?, ?)
-        """, (
-            fields["Product Description"],
-            fields["Batch/Lot No."],
-            fields["Date"],
-            fields["SKU"],
-            fields["Qty"]
-        ))
-        conn.commit()
-        st.success("✅ Saved to database!")
-
+    """, (
+        fields.get("Product Description"),
+        fields.get("Batch/Lot No."),
+        fields.get("Date"),
+        fields.get("SKU"),
+        fields.get("Qty")
+    ))
+    conn.commit()
     conn.close()
+    st.success("✅ Saved to database!")
+
+def check_duplicate(fields):
+    """
+    Check if a record with same SKU + Batch/Lot already exists.
+    Returns the first duplicate row (tuple) or None.
+    """
+    sku = fields.get("SKU")
+    lot = fields.get("Batch/Lot No.")
+    if not sku or not lot:
+        return None
+
+    conn = sqlite3.connect("sku_catalog.db")
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM sku_catalog
+        WHERE sku = ? AND batch_lot = ?
+    """, (sku, lot))
+    result = cur.fetchone()
+    conn.close()
+    return result
 
 def search_db(keyword):
     conn = sqlite3.connect("sku_catalog.db")
@@ -472,6 +479,62 @@ def clear_database():
     cur.execute("DELETE FROM sku_catalog")
     conn.commit()
     conn.close()
+
+# ===============================================================
+# 3B. EXTRA DB HELPERS (for Chatbot commands)
+# ===============================================================
+def export_csv():
+    conn = sqlite3.connect("sku_catalog.db")
+    df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
+    conn.close()
+
+    export_path = "sku_export.csv"
+    df.to_csv(export_path, index=False)
+    return export_path
+
+def export_excel():
+    conn = sqlite3.connect("sku_catalog.db")
+    df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
+    conn.close()
+
+    export_path = "sku_export.xlsx"
+    df.to_excel(export_path, index=False)
+    return export_path
+
+def clear_row(row_id):
+    conn = sqlite3.connect("sku_catalog.db")
+    cur = conn.cursor()
+    cur.execute("DELETE FROM sku_catalog WHERE id = ?", (row_id,))
+    conn.commit()
+    conn.close()
+
+def undo_last_save():
+    conn = sqlite3.connect("sku_catalog.db")
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM sku_catalog ORDER BY id DESC LIMIT 1")
+    last = cur.fetchone()
+    if last:
+        cur.execute("DELETE FROM sku_catalog WHERE id = ?", (last[0],))
+        conn.commit()
+        conn.close()
+        return last[0]
+    conn.close()
+    return None
+
+def database_stats():
+    conn = sqlite3.connect("sku_catalog.db")
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM sku_catalog")
+    count = cur.fetchone()[0]
+    cur.execute("""
+        SELECT sku, batch_lot, COUNT(*) 
+        FROM sku_catalog 
+        GROUP BY sku, batch_lot 
+        HAVING COUNT(*) > 1
+    """)
+    dups = cur.fetchall()
+    conn.close()
+    return count, dups
 
 # ===============================================================
 # 4. SAVE TO EXCEL
@@ -500,11 +563,11 @@ def save_to_excel(fields):
 
     # Map parsed fields to Excel columns
     mapping = {
-        "product description": fields["Product Description"],
-        "lot #": fields["Batch/Lot No."],
-        "date": fields["Date"],
-        "sku": fields["SKU"],
-        "qty": fields["Qty"],
+        "product description": fields.get("Product Description"),
+        "lot #": fields.get("Batch/Lot No."),
+        "date": fields.get("Date"),
+        "sku": fields.get("SKU"),
+        "qty": fields.get("Qty"),
     }
 
     target_row = EXCEL_INSERT_ROW
@@ -519,6 +582,9 @@ def save_to_excel(fields):
     wb.save(temp_path)
     shutil.move(temp_path, EXCEL_PATH)
     st.success("💾 Saved to Excel successfully!")
+
+# Ensure DB exists
+init_db()
 
 # ===============================================================
 # SIDEBAR NAVIGATION + LOGO
@@ -593,7 +659,7 @@ This dashboard automates the workflow for cataloging Tarte production retains:
     )
 
 # ===============================================================
-# UPLOAD PAGE (with review + barcode + AI prediction)
+# UPLOAD PAGE (with review + barcode + AI prediction + duplicate UI)
 # ===============================================================
 elif page == "Upload":
 
@@ -625,15 +691,27 @@ elif page == "Upload":
             if barcodes:
                 st.info(f"🔍 Detected barcodes / QR codes: {', '.join(barcodes)}")
 
-            # 2) Parse fields (basic)
+            # 2) Parse fields (basic) + AI prediction
             fields = parse_vendor_doc(text)
-
-            # 3) AI-based field prediction (no API)
             fields = predict_missing_fields(text, fields)
 
-            # 4) If still no SKU but barcode exists, use first barcode as SKU
+            # 3) If still no SKU but barcode exists, use first barcode as SKU
             if barcodes and not fields.get("SKU"):
                 fields["SKU"] = barcodes[0]
+
+            # 4) Duplicate check (preview, not blocking yet)
+            duplicate_row = check_duplicate(fields)
+            if duplicate_row:
+                st.warning(
+                    f"⚠️ Duplicate detected for SKU **{fields.get('SKU')}** / "
+                    f"Lot **{fields.get('Batch/Lot No.')}**",
+                    icon="🚨",
+                )
+                dup_df = pd.DataFrame(
+                    [duplicate_row],
+                    columns=["id", "product_desc", "batch_lot", "date", "sku", "qty"],
+                )
+                st.dataframe(dup_df, use_container_width=True)
 
             # 5) Review UI (side-by-side)
             edited_fields = review_fields_ui(fields, text, key_prefix=f"file_{idx}")
@@ -652,15 +730,28 @@ elif page == "Upload":
                 )
 
             if confirm:
-                save_to_db(edited_fields)
-                save_to_excel(edited_fields)
+                # Re-check duplicate using edited fields
+                duplicate_row_final = check_duplicate(edited_fields)
+                if duplicate_row_final:
+                    st.error("🚫 Duplicate detected — saving blocked.")
+                    # Option A: Only allow override via separate button
+                    if st.button(
+                        "🔓 Override & Force Save",
+                        key=f"override_{idx}"
+                    ):
+                        save_to_db(edited_fields)
+                        save_to_excel(edited_fields)
+                else:
+                    save_to_db(edited_fields)
+                    save_to_excel(edited_fields)
+
             elif cancel:
                 st.info(f"⏹ Skipped saving for {f.name}.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
-# CAMERA PAGE (with review + barcode + AI prediction)
+# CAMERA PAGE (with review + barcode + AI prediction + duplicate UI)
 # ===============================================================
 elif page == "Camera":
 
@@ -675,15 +766,27 @@ elif page == "Camera":
         if barcodes:
             st.info(f"🔍 Detected barcodes / QR codes: {', '.join(barcodes)}")
 
-        # 2) Parse
+        # 2) Parse + AI prediction
         fields = parse_vendor_doc(text)
-
-        # 3) AI-based prediction
         fields = predict_missing_fields(text, fields)
 
-        # 4) If still no SKU but barcode exists, use first barcode as SKU
+        # 3) If still no SKU but barcode exists, use first barcode as SKU
         if barcodes and not fields.get("SKU"):
             fields["SKU"] = barcodes[0]
+
+        # 4) Duplicate check (preview)
+        duplicate_row = check_duplicate(fields)
+        if duplicate_row:
+            st.warning(
+                f"⚠️ Duplicate detected for SKU **{fields.get('SKU')}** / "
+                f"Lot **{fields.get('Batch/Lot No.')}**",
+                icon="🚨",
+            )
+            dup_df = pd.DataFrame(
+                [duplicate_row],
+                columns=["id", "product_desc", "batch_lot", "date", "sku", "qty"],
+            )
+            st.dataframe(dup_df, use_container_width=True)
 
         # 5) Review UI
         edited_fields = review_fields_ui(fields, text, key_prefix="camera")
@@ -696,20 +799,32 @@ elif page == "Camera":
             cancel = st.button("❌ Cancel (discard photo)")
 
         if confirm:
-            save_to_db(edited_fields)
-            save_to_excel(edited_fields)
+            duplicate_row_final = check_duplicate(edited_fields)
+            if duplicate_row_final:
+                st.error("🚫 Duplicate detected — saving blocked.")
+                if st.button("🔓 Override & Force Save", key="override_camera"):
+                    save_to_db(edited_fields)
+                    save_to_excel(edited_fields)
+            else:
+                save_to_db(edited_fields)
+                save_to_excel(edited_fields)
+
         elif cancel:
             st.info("⏹ Camera capture discarded.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
-# CHATBOT PAGE (with AI prediction)
+# CHATBOT PAGE (with AI prediction + action commands)
 # ===============================================================
 elif page == "Chatbot":
 
     st.header("🤖 Chatbot Mode")
-    st.write("Try commands like: `process latest`, `search SN52`, `show database`, `clear database`.")
+    st.write(
+        "Try commands like: `process latest`, `search SN52`, `show database`, "
+        "`clear database`, `export csv`, `export excel`, `undo`, `stats`, "
+        "`list duplicates`, `open excel`, `show latest`, `help`."
+    )
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -718,14 +833,14 @@ elif page == "Chatbot":
         with st.chat_message(m["role"]):
             st.write(m["content"])
 
-    user_input = st.chat_input("Ask me to process latest, search, or show database")
+    user_input = st.chat_input("Ask me to process latest, search, or run commands")
 
     if user_input:
         st.session_state.messages.append({"role": "user", "content": user_input})
         reply = ""
-
         lower = user_input.lower()
 
+        # --- COMMAND: process latest ---
         if "process latest" in lower:
             folder = "data/specs/"
             files = [
@@ -756,17 +871,27 @@ elif page == "Chatbot":
                 if barcodes and not fields.get("SKU"):
                     fields["SKU"] = barcodes[0]
 
-                save_to_db(fields)
-                save_to_excel(fields)
+                # Duplicate handling: same as UI, but always allows override via command
+                duplicate_row = check_duplicate(fields)
+                if duplicate_row:
+                    reply = (
+                        f"⚠️ Duplicate detected for SKU {fields.get('SKU')} / "
+                        f"Lot {fields.get('Batch/Lot No.')} — not saved.\n\n"
+                        "Use the UI upload/camera flow to override and force-save if needed."
+                    )
+                else:
+                    save_to_db(fields)
+                    save_to_excel(fields)
+                    reply = f"Processed and saved latest file: {os.path.basename(latest)}"
 
-                reply = f"Processed and saved latest file: {os.path.basename(latest)}"
-
+        # --- COMMAND: search <term> ---
         elif "search" in lower:
             term = user_input.split("search", 1)[1].strip()
             df = search_db(term)
             st.dataframe(df)
             reply = f"Search results for '{term}'."
 
+        # --- COMMAND: show database ---
         elif "show database" in lower:
             conn = sqlite3.connect("sku_catalog.db")
             df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
@@ -774,14 +899,97 @@ elif page == "Chatbot":
             st.dataframe(df)
             reply = "Full database view."
 
+        # --- COMMAND: clear database ---
         elif "clear database" in lower:
             clear_database()
             reply = "Database cleared."
 
+        # --- COMMAND: export csv ---
+        elif "export csv" in lower:
+            path = export_csv()
+            reply = f"📤 Exported as CSV: `{path}`"
+
+        # --- COMMAND: export excel ---
+        elif "export excel" in lower:
+            path = export_excel()
+            reply = f"📤 Exported as Excel: `{path}`"
+
+        # --- COMMAND: undo last save ---
+        elif "undo" in lower:
+            deleted = undo_last_save()
+            if deleted:
+                reply = f"↩️ Undid last save (deleted row ID {deleted})."
+            else:
+                reply = "Nothing to undo."
+
+        # --- COMMAND: stats ---
+        elif "stats" in lower:
+            total, duplicates = database_stats()
+            reply = f"📊 Total rows: {total}\n\nDuplicate SKU/Lot combos:\n{duplicates}"
+
+        # --- COMMAND: delete <SKU> ---
+        elif "delete" in lower:
+            term = lower.split("delete", 1)[1].strip()
+            conn = sqlite3.connect("sku_catalog.db")
+            cur = conn.cursor()
+            cur.execute("DELETE FROM sku_catalog WHERE sku = ?", (term,))
+            conn.commit()
+            conn.close()
+            reply = f"🗑 Deleted all rows with SKU `{term}`."
+
+        # --- COMMAND: list duplicates ---
+        elif "list duplicates" in lower:
+            conn = sqlite3.connect("sku_catalog.db")
+            df = pd.read_sql_query("""
+                SELECT sku, batch_lot, COUNT(*) as count
+                FROM sku_catalog 
+                GROUP BY sku, batch_lot 
+                HAVING COUNT(*) > 1
+            """, conn)
+            conn.close()
+            st.dataframe(df)
+            reply = "🔍 Duplicate rows shown above."
+
+        # --- COMMAND: open excel ---
+        elif "open excel" in lower:
+            open_excel_file()
+            reply = "Opening Excel…"
+
+        # --- COMMAND: show latest ---
+        elif "show latest" in lower:
+            conn = sqlite3.connect("sku_catalog.db")
+            df = pd.read_sql_query(
+                "SELECT * FROM sku_catalog ORDER BY id DESC LIMIT 1", conn
+            )
+            conn.close()
+            st.dataframe(df)
+            reply = "📄 Latest saved row shown above."
+
+        # --- COMMAND: help ---
+        elif "help" in lower:
+            reply = """
+Available Commands:
+• process latest  
+• search <term>  
+• show database  
+• clear database  
+• export csv  
+• export excel  
+• delete <SKU>  
+• undo  
+• stats  
+• list duplicates  
+• open excel  
+• show latest  
+• help
+"""
+
+        # --- Unknown command ---
         else:
             reply = (
                 "Unknown command. Try: `process latest`, `search <term>`, "
-                "`show database`, or `clear database`."
+                "`show database`, `clear database`, `export csv`, `export excel`, "
+                "`undo`, `stats`, `list duplicates`, `open excel`, `show latest`, or `help`."
             )
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
@@ -794,7 +1002,6 @@ elif page == "Chatbot":
 elif page == "Database":
 
     st.header("📊 Database Viewer")
-    init_db()
 
     search = st.text_input("", placeholder="🔍 Search SKU, lot, or product description")
 
@@ -830,4 +1037,3 @@ elif page == "Excel Tools":
     st.write("Tip: close the workbook before running updates from this dashboard.")
 
     st.markdown("</div>", unsafe_allow_html=True)
-
