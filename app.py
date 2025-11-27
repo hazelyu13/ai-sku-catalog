@@ -3,19 +3,20 @@
 #  AI-Powered SKU Intake System
 # ===============================================================
 
-import streamlit as st
+import os
+import re
+import shutil
+import platform
+import subprocess
+import base64
 import sqlite3
+
+import streamlit as st
 import pytesseract
 from PIL import Image
 from docx import Document
 import pandas as pd
 import openpyxl
-import os
-import shutil
-import platform
-import subprocess
-import base64
-import re
 
 # Try to import barcode / QR decoder
 try:
@@ -34,7 +35,7 @@ EXCEL_INSERT_ROW = 757
 st.set_page_config(
     page_title="Tarte AI SKU System",
     page_icon="💜",
-    layout="wide"
+    layout="wide",
 )
 
 # ===============================================================
@@ -104,8 +105,8 @@ tarte_css = """
     }
 
     /* Sidebar title */
-    section[data-testid="stSidebar"] h1, 
-    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
     section[data-testid="stSidebar"] h3 {
         color: #240a3f !important;
         font-weight: 800 !important;
@@ -160,12 +161,14 @@ tarte_css = """
     .tarte-header-left {
         text-align: left;
     }
+
     .tarte-header-title {
         font-size: 30px;
         font-weight: 800;
         color: #34114f;
         margin: 0;
     }
+
     .tarte-header-sub {
         margin: 4px 0 0 0;
         font-size: 14px;
@@ -189,9 +192,31 @@ tarte_css = """
         color: #34114f !important;
         font-weight: 750 !important;
     }
-    p, li, label, span, div {
-        color: #4b3569;
+
+    /* APPLY BLACK TEXT ONLY TO MAIN PAGE (not sidebar) */
+    div.block-container li,
+    div.block-container h1,
+    div.block-container h2,
+    div.block-container h3,
+    div.block-container h4,
+    div.block-container h5 {
+        color: #000000 !important;
     }
+
+    /* Only normal body text should be black */
+    div.block-container p,
+    div.block-container li {
+        color: #000000 !important;
+    }
+
+    /* Headers keep the theme color */
+    div.block-container h1,
+    div.block-container h2,
+    div.block-container h3 {
+        color: #34114f !important;
+    }
+
+
 
     /* CHAT BUBBLES */
     .stChatMessage {
@@ -218,6 +243,61 @@ tarte_css = """
         transform: translateY(-1px);
     }
 
+    /* SELECTBOX / DROPDOWN CUSTOMIZATION */
+    /* Closed state */
+    div[data-baseweb="select"] > div {
+        background: #ffffff !important;
+        border-radius: 12px !important;
+        border: 2px solid #d0c2e8 !important;
+        color: #2A0F44 !important;
+        font-weight: 500 !important;
+        min-height: 44px !important;
+        padding: 0 12px !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+
+    div[data-baseweb="select"] span {
+        font-size: 14px !important;
+        line-height: 1.2 !important;
+    }
+
+    /* DROPDOWN MENU PANEL */
+    div[data-baseweb="select"] ~ div {
+        background: #ffffff !important;
+        border-radius: 12px !important;
+        border: 2px solid #d0c2e8 !important;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.15) !important;
+        padding: 6px 0 !important;
+    }
+
+    /* DROPDOWN ITEM STYLING */
+    div[data-baseweb="select"] ~ div > div {
+        background: #ffffff !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
+        padding: 10px 14px !important;
+    }
+
+    /* HOVER */
+    div[data-baseweb="select"] ~ div > div:hover {
+        background: #f5e9ff !important;
+        color: #34114f !important;
+    }
+
+    /* ONLY FIX DROPDOWN TEXT COLOR */
+    div[data-baseweb="select"] ~ div * {
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }
+
+    /* Make only the uploader box text white */
+[data-testid="stFileUploadDropzone"] * {
+    color: #ffffff !important;
+    font-weight: 600 !important;
+}
+
+
 </style>
 """
 st.markdown(tarte_css, unsafe_allow_html=True)
@@ -225,29 +305,37 @@ st.markdown(tarte_css, unsafe_allow_html=True)
 # ===============================================================
 # Helpers
 # ===============================================================
-def open_excel_file(excel_path=EXCEL_PATH):
+
+
+def open_excel_file(excel_path: str = EXCEL_PATH) -> None:
+    """Open the Excel file using the OS default program."""
     try:
         system = platform.system()
         if system == "Darwin":
             subprocess.call(["open", excel_path])
         elif system == "Windows":
-            os.startfile(excel_path)
+            os.startfile(excel_path)  # type: ignore[attr-defined]
         else:
             subprocess.call(["xdg-open", excel_path])
         st.success("📂 Excel file opened!")
     except Exception as e:
         st.error(f"❌ Could not open Excel file.\n\n{e}")
 
+
 def load_image_base64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
+
 # ===============================================================
 # 1. OCR / BARCODE / DOCX EXTRACTION
 # ===============================================================
-def extract_text_from_image(image_file):
+
+
+def extract_text_from_image(image_file) -> str:
     img = Image.open(image_file)
     return pytesseract.image_to_string(img)
+
 
 def extract_barcodes_from_image(image_file):
     if not BARCODE_AVAILABLE:
@@ -262,12 +350,15 @@ def extract_barcodes_from_image(image_file):
             continue
     return values
 
-def extract_text_from_docx(docx_file):
+
+def extract_text_from_docx(docx_file) -> str:
     doc = Document(docx_file)
     result = []
+
     for para in doc.paragraphs:
         if para.text.strip():
             result.append(para.text.strip())
+
     for table in doc.tables:
         for row in table.rows:
             cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
@@ -275,12 +366,16 @@ def extract_text_from_docx(docx_file):
                 result.append(f"{cells[0]} {cells[1]}")
             elif cells:
                 result.append(" | ".join(cells))
+
     return "\n".join(result)
+
 
 # ===============================================================
 # 2. PARSE FIELDS
 # ===============================================================
-def parse_vendor_doc(text):
+
+
+def parse_vendor_doc(text: str) -> dict:
     fields = {
         "Product Description": None,
         "Batch/Lot No.": None,
@@ -297,10 +392,13 @@ def parse_vendor_doc(text):
                     fields[key] = parts[1].strip()
     return fields
 
+
 # ===============================================================
 # 2B. AI FIELD PREDICTION (returns fields + ai_flags)
 # ===============================================================
-def predict_missing_fields(raw_text, fields):
+
+
+def predict_missing_fields(raw_text: str, fields: dict):
     """
     Enhance vendor field extraction using regex + heuristics.
     Returns (fields, ai_flags) where ai_flags marks which fields AI filled.
@@ -310,14 +408,20 @@ def predict_missing_fields(raw_text, fields):
 
     # SKU
     if not fields.get("SKU"):
-        sku_match = re.search(r"(sku|style|item)[^\w]?[\s#:]*([a-z0-9\-]{3,20})", text)
+        sku_match = re.search(
+            r"(sku|style|item)[^\w]?[\s#:]*([a-z0-9\-]{3,20})",
+            text,
+        )
         if sku_match:
             fields["SKU"] = sku_match.group(2).upper()
             ai_flags["SKU"] = True
 
     # Lot / Batch
     if not fields.get("Batch/Lot No."):
-        lot_match = re.search(r"(lot|batch|code|lote)[^\w]?[\s#:]*([a-z0-9\-]{3,20})", text)
+        lot_match = re.search(
+            r"(lot|batch|code|lote)[^\w]?[\s#:]*([a-z0-9\-]{3,20})",
+            text,
+        )
         if lot_match:
             fields["Batch/Lot No."] = lot_match.group(2).upper()
             ai_flags["Batch/Lot No."] = True
@@ -326,7 +430,7 @@ def predict_missing_fields(raw_text, fields):
     if not fields.get("Date"):
         date_match = re.search(
             r"((\d{4}[-./]\d{1,2}[-./]\d{1,2})|(\d{1,2}[-./]\d{1,2}[-./]\d{2,4}))",
-            text
+            text,
         )
         if date_match:
             fields["Date"] = date_match.group(1)
@@ -334,7 +438,10 @@ def predict_missing_fields(raw_text, fields):
 
     # Qty
     if not fields.get("Qty"):
-        qty_match = re.search(r"(qty|quantity|pcs|units|pack)[^\d]*(\d{1,5})", text)
+        qty_match = re.search(
+            r"(qty|quantity|pcs|units|pack)[^\d]*(\d{1,5})",
+            text,
+        )
         if qty_match:
             fields["Qty"] = qty_match.group(2)
             ai_flags["Qty"] = True
@@ -343,7 +450,7 @@ def predict_missing_fields(raw_text, fields):
     if not fields.get("Product Description"):
         desc_match = re.search(
             r"(lipstick|concealer|foundation|palette|mascara|gel|serum|cream|gloss)[a-z0-9\s\-]*",
-            text
+            text,
         )
         if desc_match:
             fields["Product Description"] = desc_match.group(0).title()
@@ -358,9 +465,12 @@ def predict_missing_fields(raw_text, fields):
 
     return fields, ai_flags
 
+
 # ===============================================================
 # 2C. REVIEW UI (with AI-filled chip support)
 # ===============================================================
+
+
 def review_fields_ui(initial_fields, raw_text, key_prefix="", ai_flags=None):
     """
     Side-by-side review:
@@ -434,40 +544,51 @@ def review_fields_ui(initial_fields, raw_text, key_prefix="", ai_flags=None):
         )
 
     return edited
+
+
 # ===============================================================
 # 3. DATABASE + DUPLICATE CHECK
 # ===============================================================
+
+
 def init_db():
     conn = sqlite3.connect("sku_catalog.db")
     cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS sku_catalog (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_desc TEXT,
-        batch_lot TEXT,
-        date TEXT,
-        sku TEXT,
-        qty TEXT
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sku_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_desc TEXT,
+            batch_lot TEXT,
+            date TEXT,
+            sku TEXT,
+            qty TEXT
+        )
+        """
     )
-    """)
     conn.close()
+
 
 def save_to_db(fields):
     conn = sqlite3.connect("sku_catalog.db")
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO sku_catalog (product_desc, batch_lot, date, sku, qty)
         VALUES (?, ?, ?, ?, ?)
-    """, (
-        fields.get("Product Description"),
-        fields.get("Batch/Lot No."),
-        fields.get("Date"),
-        fields.get("SKU"),
-        fields.get("Qty")
-    ))
+        """,
+        (
+            fields.get("Product Description"),
+            fields.get("Batch/Lot No."),
+            fields.get("Date"),
+            fields.get("SKU"),
+            fields.get("Qty"),
+        ),
+    )
     conn.commit()
     conn.close()
     st.success("✅ Saved to database!")
+
 
 def check_duplicate(fields):
     sku = fields.get("SKU")
@@ -477,24 +598,32 @@ def check_duplicate(fields):
 
     conn = sqlite3.connect("sku_catalog.db")
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         SELECT * FROM sku_catalog
         WHERE sku = ? AND batch_lot = ?
-    """, (sku, lot))
+        """,
+        (sku, lot),
+    )
     result = cur.fetchone()
     conn.close()
     return result
 
+
 def search_db(keyword):
     conn = sqlite3.connect("sku_catalog.db")
-    df = pd.read_sql_query(f"""
+    df = pd.read_sql_query(
+        f"""
         SELECT * FROM sku_catalog
         WHERE sku LIKE '%{keyword}%'
         OR batch_lot LIKE '%{keyword}%'
         OR product_desc LIKE '%{keyword}%'
-    """, conn)
+        """,
+        conn,
+    )
     conn.close()
     return df
+
 
 def clear_database():
     conn = sqlite3.connect("sku_catalog.db")
@@ -503,9 +632,12 @@ def clear_database():
     conn.commit()
     conn.close()
 
+
 # ===============================================================
 # 3B. EXTRA DB HELPERS (Chatbot)
 # ===============================================================
+
+
 def export_csv():
     conn = sqlite3.connect("sku_catalog.db")
     df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
@@ -513,6 +645,7 @@ def export_csv():
     export_path = "sku_export.csv"
     df.to_csv(export_path, index=False)
     return export_path
+
 
 def export_excel():
     conn = sqlite3.connect("sku_catalog.db")
@@ -522,12 +655,14 @@ def export_excel():
     df.to_excel(export_path, index=False)
     return export_path
 
+
 def clear_row(row_id):
     conn = sqlite3.connect("sku_catalog.db")
     cur = conn.cursor()
     cur.execute("DELETE FROM sku_catalog WHERE id = ?", (row_id,))
     conn.commit()
     conn.close()
+
 
 def undo_last_save():
     conn = sqlite3.connect("sku_catalog.db")
@@ -542,24 +677,30 @@ def undo_last_save():
     conn.close()
     return None
 
+
 def database_stats():
     conn = sqlite3.connect("sku_catalog.db")
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM sku_catalog")
     count = cur.fetchone()[0]
-    cur.execute("""
-        SELECT sku, batch_lot, COUNT(*) 
-        FROM sku_catalog 
-        GROUP BY sku, batch_lot 
+    cur.execute(
+        """
+        SELECT sku, batch_lot, COUNT(*)
+        FROM sku_catalog
+        GROUP BY sku, batch_lot
         HAVING COUNT(*) > 1
-    """)
+        """
+    )
     dups = cur.fetchall()
     conn.close()
     return count, dups
 
+
 # ===============================================================
 # 4. SAVE TO EXCEL
 # ===============================================================
+
+
 def save_to_excel(fields):
     if not os.path.exists(EXCEL_PATH):
         st.error(f"❌ Excel not found at {EXCEL_PATH}")
@@ -602,9 +743,12 @@ def save_to_excel(fields):
     shutil.move(temp_path, EXCEL_PATH)
     st.success("💾 Saved to Excel successfully!")
 
+
 # ===============================================================
 # 5. GALLERY IMAGE SAVER (SKU + LOT in filename)
 # ===============================================================
+
+
 def save_image_to_gallery(fields, file_obj, original_name):
     gallery_folder = "data/gallery"
     os.makedirs(gallery_folder, exist_ok=True)
@@ -626,6 +770,7 @@ def save_image_to_gallery(fields, file_obj, original_name):
         out.write(file_obj.getbuffer())
 
     return path
+
 
 # Ensure DB exists
 init_db()
@@ -655,7 +800,7 @@ st.sidebar.title("Tarte SKU System")
 page = st.sidebar.radio(
     "",
     ["Home", "Upload", "Camera", "Chatbot", "Database", "Gallery", "Excel Tools"],
-    label_visibility="collapsed"
+    label_visibility="collapsed",
 )
 
 if st.sidebar.button("📂 Open Excel File"):
@@ -701,6 +846,7 @@ This dashboard automates the workflow for cataloging Tarte production retains:
 • Use the chatbot to trigger actions or search data  
         """
     )
+
 # ===============================================================
 # UPLOAD PAGE
 # ===============================================================
@@ -713,7 +859,7 @@ elif page == "Upload":
         "Upload one or more files",
         type=["docx", "jpg", "jpeg", "png"],
         accept_multiple_files=True,
-        help="Upload retain specs, artwork proofs, or vendor docs."
+        help="Upload retain specs, artwork proofs, or vendor docs.",
     )
 
     if files:
@@ -765,12 +911,12 @@ elif page == "Upload":
             with col_a:
                 confirm = st.button(
                     f"✅ Confirm & Save {f.name}",
-                    key=f"confirm_{idx}"
+                    key=f"confirm_{idx}",
                 )
             with col_b:
                 cancel = st.button(
                     f"❌ Cancel {f.name}",
-                    key=f"cancel_{idx}"
+                    key=f"cancel_{idx}",
                 )
 
             if confirm:
@@ -779,7 +925,7 @@ elif page == "Upload":
                     st.error("🚫 Duplicate detected - saving blocked.")
                     if st.button(
                         "🔓 Override & Force Save",
-                        key=f"override_{idx}"
+                        key=f"override_{idx}",
                     ):
                         save_to_db(edited_fields)
                         save_to_excel(edited_fields)
@@ -793,8 +939,6 @@ elif page == "Upload":
 
             elif cancel:
                 st.info(f"⏹ Skipped saving for {f.name}.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
 # CAMERA PAGE
@@ -858,8 +1002,6 @@ elif page == "Camera":
 
         elif cancel:
             st.info("⏹ Camera capture discarded.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
 # CHATBOT PAGE
@@ -928,16 +1070,25 @@ elif page == "Chatbot":
                 else:
                     save_to_db(fields)
                     save_to_excel(fields)
-                    reply = f"Processed and saved latest file: {os.path.basename(latest)}"
+                    reply = (
+                        f"Processed and saved latest file: "
+                        f"{os.path.basename(latest)}"
+                    )
 
                     if is_image_file:
                         with open(latest, "rb") as fh:
                             class _Tmp:
-                                def __init__(self, b): self._b = b
-                                def getbuffer(self): return self._b
+                                def __init__(self, b):
+                                    self._b = b
+
+                                def getbuffer(self):
+                                    return self._b
+
                             buf = fh.read()
                             tmp_file = _Tmp(buf)
-                            save_image_to_gallery(fields, tmp_file, os.path.basename(latest))
+                            save_image_to_gallery(
+                                fields, tmp_file, os.path.basename(latest)
+                            )
 
         elif "search" in lower:
             term = user_input.split("search", 1)[1].strip()
@@ -986,12 +1137,15 @@ elif page == "Chatbot":
 
         elif "list duplicates" in lower:
             conn = sqlite3.connect("sku_catalog.db")
-            df = pd.read_sql_query("""
+            df = pd.read_sql_query(
+                """
                 SELECT sku, batch_lot, COUNT(*) as count
-                FROM sku_catalog 
-                GROUP BY sku, batch_lot 
+                FROM sku_catalog
+                GROUP BY sku, batch_lot
                 HAVING COUNT(*) > 1
-            """, conn)
+                """,
+                conn,
+            )
             conn.close()
             st.dataframe(df)
             reply = "🔍 Duplicate rows shown above."
@@ -1003,7 +1157,8 @@ elif page == "Chatbot":
         elif "show latest" in lower:
             conn = sqlite3.connect("sku_catalog.db")
             df = pd.read_sql_query(
-                "SELECT * FROM sku_catalog ORDER BY id DESC LIMIT 1", conn
+                "SELECT * FROM sku_catalog ORDER BY id DESC LIMIT 1",
+                conn,
             )
             conn.close()
             st.dataframe(df)
@@ -1036,8 +1191,6 @@ Available Commands:
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
 # ===============================================================
 # DATABASE PAGE
 # ===============================================================
@@ -1059,8 +1212,6 @@ elif page == "Database":
     if st.button("🧹 Clear database"):
         clear_database()
         st.success("Database cleared.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
 # GALLERY PAGE (Pinterest-style with filters)
@@ -1136,7 +1287,11 @@ elif page == "Gallery":
 
         for idx, img_path in enumerate(sorted(images)):
             basename = os.path.basename(img_path)
-            match = re.match(r"SKU_(.+)_LOT_(.+)\.[^.]+$", basename, re.IGNORECASE)
+            match = re.match(
+                r"SKU_(.+)_LOT_(.+)\.[^.]+$",
+                basename,
+                re.IGNORECASE,
+            )
 
             display_info = None
             sku_val = None
@@ -1222,7 +1377,3 @@ elif page == "Excel Tools":
 
     st.markdown("---")
     st.write("Tip: close the workbook before running updates from this dashboard.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
