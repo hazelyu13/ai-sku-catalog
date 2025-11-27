@@ -16,6 +16,13 @@ import platform
 import subprocess
 import base64
 
+# Try to import barcode / QR decoder
+try:
+    from pyzbar.pyzbar import decode as decode_barcode
+    BARCODE_AVAILABLE = True
+except ImportError:
+    BARCODE_AVAILABLE = False
+
 # ===============================================================
 # GLOBAL CONFIG
 # ===============================================================
@@ -36,23 +43,21 @@ st.set_page_config(
 tarte_css = """
 <style>
 
-    /* GLOBAL BACKGROUND - soft gradient */
+    /* GLOBAL BACKGROUND - solid tarte purple */
     .stApp {
-    background: #c098ea !important;
-    background-attachment: fixed;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #c098ea !important;
+        background-attachment: fixed;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-
 
     /* MAIN CONTENT WIDTH */
     div.block-container {
-    padding-top: 0 !important;
-    margin-top: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    border: none !important;
-}
-
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
 
     /* TOP TOOLBAR */
     header[data-testid="stHeader"] {
@@ -61,14 +66,14 @@ tarte_css = """
 
     /* SIDEBAR PANEL */
     section[data-testid="stSidebar"] {
-    background: #e1daf8;
-    border-right: 2px solid #8b55c9;
-    padding-top: 2rem;
+        background: #e1daf8;
+        border-right: 2px solid #8b55c9;
+        padding-top: 2rem;
     }
 
     /* Remove radio bullets */
     section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
-        display: none !important;        /* hides the radio button circle */
+        display: none !important;
     }
 
     /* Style menu items */
@@ -84,15 +89,14 @@ tarte_css = """
     /* Hover effect */
     section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
         background: #FFFFFF !important;
-        color: #2A0F44 !important;   /* keeps text readable */
+        color: #2A0F44 !important;
     }
 
-    /* Selected item (fix) */
+    /* Selected item */
     section[data-testid="stSidebar"] div[role="radiogroup"] [aria-checked="true"] {
         background: rgba(255, 255, 255, 0.5) !important;
         border-radius: 12px;
     }
-
 
     section[data-testid="stSidebar"] * {
         color: #240a3f !important;
@@ -121,24 +125,21 @@ tarte_css = """
         border-color: #f6edff80;
     }
 
-    /* Highlight selected option */
-    div[role="radiogroup"] input[checked] + div {
-        color: #240a3f !important;
-        font-weight: 700;
-    }
-
-    /* OPEN EXCEL BUTTON IN SIDEBAR */
+    /* Sidebar Open Excel button — white version */
     section[data-testid="stSidebar"] div.stButton > button {
         width: 100%;
-        background: linear-gradient(135deg, #f8d76a, #f0b94c);
-        color: #3a2308 !important;
+        background: #ffffff !important;
+        color: #2A0F44 !important;
         border-radius: 999px !important;
-        border: none !important;
+        border: 2px solid #d0c2e8 !important;
         font-weight: 700 !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+        padding: 0.6rem 1.2rem;
+        font-size: 15px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     }
     section[data-testid="stSidebar"] div.stButton > button:hover {
-        background: linear-gradient(135deg, #ffe27c, #f6c764);
+        background: #f4efff !important;
+        border-color: #b9a6dd !important;
         transform: translateY(-1px);
     }
 
@@ -183,16 +184,6 @@ tarte_css = """
         gap: 6px;
     }
 
-    /* WHITE CONTENT CARDS */
-    .tarte-card {
-        background: #ffffff;
-        padding: 26px 24px;
-        border-radius: 22px;
-        border: 1px solid #ebddff;
-        box-shadow: 0 8px 20px rgba(92, 54, 132, 0.10);
-        margin-bottom: 26px;
-    }
-
     /* SECTION TITLES */
     h1, h2, h3, h4, h5 {
         color: #34114f !important;
@@ -202,81 +193,12 @@ tarte_css = """
         color: #4b3569;
     }
 
-    /* GOLD CTA BUTTONS (main area) */
-   /* Sidebar open excel button — white version */
-section[data-testid="stSidebar"] div.stButton > button {
-    width: 100%;
-    background: #ffffff !important;          /* WHITE BACKGROUND */
-    color: #2A0F44 !important;                /* Tarte purple text */
-    border-radius: 999px !important;
-    border: 2px solid #d0c2e8 !important;     /* Soft purple border */
-    font-weight: 700 !important;
-    padding: 0.6rem 1.2rem;
-    font-size: 15px !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);   /* Light shadow */
-}
-
-/* Hover state */
-section[data-testid="stSidebar"] div.stButton > button:hover {
-    background: #f4efff !important;           /* soft lilac hover */
-    border-color: #b9a6dd !important;
-    transform: translateY(-1px);
-}
-
     /* CHAT BUBBLES */
     .stChatMessage {
         background: #ffffffdd !important;
         border-radius: 12px !important;
         padding: 12px !important;
     }
-
-    /* MAIN PAGE WHITE CONTENT BOX */
-.tarte-content-box {
-    background: #ffffff;
-    padding: 30px 30px 40px 30px;
-    border-radius: 22px;
-    border: 1px solid #e6d9ff;
-    box-shadow: 0 6px 18px rgba(70, 40, 110, 0.10);
-    margin-top: 20px;
-    margin-bottom: 40px;
-
-    /* Suggested prompts container */
-    .tarte-suggestions {
-        background: #ffffff;
-        padding: 12px 18px;
-        border-radius: 12px;
-        border: 1px solid #ddd3ff;
-        margin-bottom: 14px;
-        font-size: 15px;
-        color: #3c2a67;
-    }
-
-    .tarte-suggestions span {
-        background: #f3edff;
-        padding: 6px 12px;
-        border-radius: 8px;
-        margin-right: 8px;
-        cursor: pointer;
-        border: 1px solid #dfccff;
-    }
-
-    .tarte-suggestions span:hover {
-        background: #e6dbff;
-    }
-    
-    /* UNIVERSAL PAGE CONTENT BOX */
-    .tarte-page-box {
-        background: #ffffff;
-        padding: 32px 40px;
-        border-radius: 22px;
-        border: 1px solid #e8dfff;
-        box-shadow: 0 8px 20px rgba(80, 45, 120, 0.10);
-        margin-top: 25px;
-        margin-bottom: 35px;
-    }
-
-
-}
 
 </style>
 """
@@ -306,13 +228,29 @@ def load_image_base64(path: str) -> str:
         return base64.b64encode(f.read()).decode()
 
 # ===============================================================
-# 1. OCR AND DOCX EXTRACTION
+# 1. OCR, BARCODE, DOCX EXTRACTION
 # ===============================================================
 def extract_text_from_image(image_file):
+    """OCR text from image (file-like or path)."""
     img = Image.open(image_file)
     return pytesseract.image_to_string(img)
 
+def extract_barcodes_from_image(image_file):
+    """Decode barcodes/QR codes from an image (if pyzbar is installed)."""
+    if not BARCODE_AVAILABLE:
+        return []
+    img = Image.open(image_file).convert("L")
+    codes = decode_barcode(img)
+    values = []
+    for c in codes:
+        try:
+            values.append(c.data.decode("utf-8"))
+        except Exception:
+            continue
+    return values
+
 def extract_text_from_docx(docx_file):
+    """Extract both paragraph and table text from DOCX."""
     doc = Document(docx_file)
     result = []
 
@@ -334,6 +272,7 @@ def extract_text_from_docx(docx_file):
 # 2. PARSE FIELDS
 # ===============================================================
 def parse_vendor_doc(text):
+    """Parse SKU-related fields from the extracted text."""
     fields = {
         "Product Description": None,
         "Batch/Lot No.": None,
@@ -342,12 +281,65 @@ def parse_vendor_doc(text):
         "Qty": None,
     }
     for line in text.splitlines():
+        line = line.strip()
         for key in fields.keys():
             if line.lower().startswith(key.lower()):
                 parts = line.split(":", 1)
                 if len(parts) == 2:
                     fields[key] = parts[1].strip()
     return fields
+
+# ===============================================================
+# 2b. REVIEW UI (Side-by-side)
+# ===============================================================
+def review_fields_ui(initial_fields, raw_text, key_prefix=""):
+    """
+    Side-by-side review:
+    Left: raw extracted text
+    Right: editable fields
+    Returns edited_fields dict with same keys as initial_fields.
+    """
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("📄 Extracted Text")
+        st.text_area(
+            "Raw OCR / DOCX text",
+            value=raw_text,
+            height=260,
+            key=f"{key_prefix}_raw_text",
+        )
+
+    edited = {}
+    with col2:
+        st.subheader("✏️ Review & Edit Fields")
+        edited["Product Description"] = st.text_input(
+            "Product Description",
+            value=initial_fields.get("Product Description") or "",
+            key=f"{key_prefix}_desc",
+        )
+        edited["Batch/Lot No."] = st.text_input(
+            "Batch / Lot No.",
+            value=initial_fields.get("Batch/Lot No.") or "",
+            key=f"{key_prefix}_lot",
+        )
+        edited["Date"] = st.text_input(
+            "Date",
+            value=initial_fields.get("Date") or "",
+            key=f"{key_prefix}_date",
+        )
+        edited["SKU"] = st.text_input(
+            "SKU",
+            value=initial_fields.get("SKU") or "",
+            key=f"{key_prefix}_sku",
+        )
+        edited["Qty"] = st.text_input(
+            "Qty",
+            value=initial_fields.get("Qty") or "",
+            key=f"{key_prefix}_qty",
+        )
+
+    return edited
 
 # ===============================================================
 # 3. DATABASE
@@ -377,7 +369,7 @@ def save_to_db(fields):
     exists = cur.fetchone()[0]
 
     if exists:
-        st.warning(f"⚠️ Duplicate SKU {fields['SKU']} / Lot {fields['Batch/Lot No.']}")
+        st.warning(f"⚠️ Duplicate SKU {fields['SKU']} / Lot {fields['Batch/Lot No.']} — skipped.")
     else:
         cur.execute("""
         INSERT INTO sku_catalog (product_desc, batch_lot, date, sku, qty)
@@ -430,12 +422,14 @@ def save_to_excel(fields):
 
     ws = wb[EXCEL_SHEET_NAME]
 
+    # Map by header names (row 1)
     excel_headers = {}
     for col in range(1, ws.max_column + 1):
         header_value = ws.cell(row=1, column=col).value
         if header_value:
             excel_headers[header_value.lower()] = col
 
+    # Map your parsed field names to actual Excel headers
     mapping = {
         "product description": fields["Product Description"],
         "lot #": fields["Batch/Lot No."],
@@ -460,7 +454,6 @@ def save_to_excel(fields):
 # ===============================================================
 # SIDEBAR NAVIGATION + LOGO
 # ===============================================================
-# Sidebar logo (Option 1 – logo above title)
 logo_base64 = None
 try:
     logo_base64 = load_image_base64("data/images/tarte_logo.png")
@@ -478,17 +471,14 @@ if logo_base64:
         unsafe_allow_html=True,
     )
 
-# 2. SIDEBAR TITLE
 st.sidebar.title("Tarte SKU System")
 
-# 3. NAVIGATION (radio menu)
 page = st.sidebar.radio(
     "",
     ["Home", "Upload", "Camera", "Chatbot", "Database", "Excel Tools"],
-    label_visibility="collapsed"   # ⭐ HIDES LABEL + removes bullet/dot
+    label_visibility="collapsed"
 )
 
-# 4. OPEN EXCEL BUTTON
 if st.sidebar.button("📂 Open Excel File"):
     open_excel_file()
 
@@ -519,91 +509,120 @@ st.markdown(
 # ===============================================================
 if page == "Home":
     st.subheader("✨ Welcome")
-
     st.write(
         """
 This dashboard automates the workflow for cataloging Tarte production retains:
 
 • Upload DOCX or image files  
 • Capture new retains with the camera  
-• Extract and parse core SKU fields  
-• Store records in a duplicate safe SQLite database  
+• Extract text + barcodes and parse core SKU fields  
+• Review and edit before saving  
+• Store records in a duplicate-safe SQLite database  
 • Sync rows directly into the master Excel tracker  
 • Use the chatbot to trigger actions or search data  
         """
     )
 
 # ===============================================================
-# UPLOAD PAGE
+# UPLOAD PAGE (with review + barcode)
 # ===============================================================
 elif page == "Upload":
-    st.markdown('<div class="tarte-page-box">', unsafe_allow_html=True)
-    with st.container():
 
-        st.header("📄 Upload Vendor Documents")
+    st.header("📄 Upload Vendor Documents")
+    st.write("Upload one or more DOCX or image files. Review fields before saving.")
 
-        st.subheader("✨ Welcome")
+    files = st.file_uploader(
+        "Upload one or more files",
+        type=["docx", "jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+        help="Upload retain specs, artwork proofs, or vendor docs."
+    )
 
-        files = st.file_uploader(
-            "Upload one or more files",
-            type=["docx", "jpg", "jpeg", "png"],
-            accept_multiple_files=True,
-            help="Upload retain specs, artwork proofs, or vendor docs."
-        )
+    if files:
+        st.success(f"{len(files)} files uploaded.")
 
-        collected_fields = []
+        for idx, f in enumerate(files, start=1):
+            st.markdown("---")
+            st.subheader(f"📄 File {idx}: {f.name}")
 
-        if files:
-            st.success(f"{len(files)} files uploaded.")
+            # 1) Extract text
+            if f.name.lower().endswith(".docx"):
+                text = extract_text_from_docx(f)
+                barcodes = []
+            else:
+                text = extract_text_from_image(f)
+                barcodes = extract_barcodes_from_image(f)
 
-            for idx, f in enumerate(files, start=1):
-                st.markdown("---")
-                st.subheader(f"📄 File {idx}: {f.name}")
+            if barcodes:
+                st.info(f"🔍 Detected barcodes / QR codes: {', '.join(barcodes)}")
 
-                text = (
-                    extract_text_from_docx(f)
-                    if f.name.lower().endswith(".docx")
-                    else extract_text_from_image(f)
+            # 2) Parse fields
+            fields = parse_vendor_doc(text)
+
+            # 3) If no SKU but barcode exists, use first barcode as SKU
+            if barcodes and not fields.get("SKU"):
+                fields["SKU"] = barcodes[0]
+
+            # 4) Review UI (side-by-side)
+            edited_fields = review_fields_ui(fields, text, key_prefix=f"file_{idx}")
+
+            # 5) Confirm / Cancel
+            col_a, col_b = st.columns(2)
+            with col_a:
+                confirm = st.button(
+                    f"✅ Confirm & Save {f.name}",
+                    key=f"confirm_{idx}"
+                )
+            with col_b:
+                cancel = st.button(
+                    f"❌ Cancel {f.name}",
+                    key=f"cancel_{idx}"
                 )
 
-                with st.expander("🔎 Extracted text preview"):
-                    st.text(text)
-
-                fields = parse_vendor_doc(text)
-                st.json(fields)
-                collected_fields.append(fields)
-
-                if st.button(f"💾 Save {f.name}", key=f"save_{idx}"):
-                    save_to_db(fields)
-                    save_to_excel(fields)
-
-            if collected_fields and st.button("🔥 Process all files"):
-                for flds in collected_fields:
-                    save_to_db(flds)
-                    save_to_excel(flds)
-                st.success("All files processed and synced.")
+            if confirm:
+                save_to_db(edited_fields)
+                save_to_excel(edited_fields)
+            elif cancel:
+                st.info(f"⏹ Skipped saving for {f.name}.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
-# CAMERA PAGE
+# CAMERA PAGE (with review + barcode)
 # ===============================================================
 elif page == "Camera":
-    st.header("📸 Capture Vendor Document")
 
+    st.header("📸 Capture Vendor Document")
     photo = st.camera_input("Take a photo of the retain or vendor sheet")
 
     if photo:
+        # 1) Extract text + barcodes
         text = extract_text_from_image(photo)
-        with st.expander("🔎 Extracted text preview"):
-            st.text(text)
+        barcodes = extract_barcodes_from_image(photo)
 
+        if barcodes:
+            st.info(f"🔍 Detected barcodes / QR codes: {', '.join(barcodes)}")
+
+        # 2) Parse
         fields = parse_vendor_doc(text)
-        st.json(fields)
+        if barcodes and not fields.get("SKU"):
+            fields["SKU"] = barcodes[0]
 
-        if st.button("💾 Save from camera"):
-            save_to_db(fields)
-            save_to_excel(fields)
+        # 3) Review UI
+        edited_fields = review_fields_ui(fields, text, key_prefix="camera")
+
+        # 4) Confirm / Cancel
+        col_a, col_b = st.columns(2)
+        with col_a:
+            confirm = st.button("✅ Confirm & Save from camera")
+        with col_b:
+            cancel = st.button("❌ Cancel (discard photo)")
+
+        if confirm:
+            save_to_db(edited_fields)
+            save_to_excel(edited_fields)
+        elif cancel:
+            st.info("⏹ Camera capture discarded.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -612,22 +631,9 @@ elif page == "Camera":
 # ===============================================================
 elif page == "Chatbot":
 
-    # White content box wrapper
-    st.markdown('<div class="tarte-chatbox">', unsafe_allow_html=True)
-
     st.header("🤖 Chatbot Mode")
+    st.write("Try commands like: `process latest`, `search SN52`, `show database`, `clear database`.")
 
-    # Suggested prompt bar
-    st.markdown("""
-        <div class="tarte-suggestions">
-            <strong>Try:</strong>
-            <span onclick="document.querySelector('input[type=text]').value='process latest'">process latest</span>
-            <span onclick="document.querySelector('input[type=text]').value='search concealer'">search concealer</span>
-            <span onclick="document.querySelector('input[type=text]').value='show database'">show database</span>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -635,13 +641,12 @@ elif page == "Chatbot":
         with st.chat_message(m["role"]):
             st.write(m["content"])
 
-    # Chat input
     user_input = st.chat_input("Ask me to process latest, search, or show database")
 
     if user_input:
         st.session_state.messages.append({"role": "user", "content": user_input})
+        reply = ""
 
-        # logic unchanged …
         if "process latest" in user_input.lower():
             folder = "data/specs/"
             files = [
@@ -654,15 +659,25 @@ elif page == "Chatbot":
                 reply = "❌ No files found in data/specs."
             else:
                 latest = max(files, key=os.path.getmtime)
-                text = (
-                    extract_text_from_docx(latest)
-                    if latest.lower().endswith(".docx")
-                    else extract_text_from_image(latest)
-                )
+
+                if latest.lower().endswith(".docx"):
+                    with open(latest, "rb") as fh:
+                        text = extract_text_from_docx(fh)
+                    barcodes = []
+                else:
+                    with open(latest, "rb") as fh:
+                        text = extract_text_from_image(fh)
+                        fh.seek(0)
+                        barcodes = extract_barcodes_from_image(fh)
+
                 fields = parse_vendor_doc(text)
+                if barcodes and not fields.get("SKU"):
+                    fields["SKU"] = barcodes[0]
+
                 save_to_db(fields)
                 save_to_excel(fields)
-                reply = f"Processed and saved: {os.path.basename(latest)}"
+
+                reply = f"Processed and saved latest file: {os.path.basename(latest)}"
 
         elif "search" in user_input.lower():
             term = user_input.split("search", 1)[1].strip()
@@ -677,8 +692,12 @@ elif page == "Chatbot":
             st.dataframe(df)
             reply = "Full database view."
 
+        elif "clear database" in user_input.lower():
+            clear_database()
+            reply = "Database cleared."
+
         else:
-            reply = "Unknown command. Try: process latest, search <term>, or show database."
+            reply = "Unknown command. Try: `process latest`, `search <term>`, `show database`, or `clear database`."
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
 
@@ -688,36 +707,11 @@ elif page == "Chatbot":
 # DATABASE PAGE
 # ===============================================================
 elif page == "Database":
+
     st.header("📊 Database Viewer")
-
-    # ---- White styled Clear Database button ----
-    st.markdown("""
-<style>
-
-/* Target ALL stButtons inside the Database page */
-div[data-testid="stButton"] > button[kind="secondary"] {
-    background: #ffffff !important;        /* BUTTON COLOR */
-    color: #2A0F44 !important;             /* TEXT COLOR */
-    border: 2px solid #d0c2e8 !important;  /* BORDER */
-    border-radius: 10px !important;
-    padding: 8px 16px !important;
-    font-weight: 600 !important;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-}
-
-/* Hover */
-div[data-testid="stButton"] > button[kind="secondary"]:hover {
-    background: #f4f0ff !important;        /* HOVER COLOR */
-    border-color: #b8a7dd !important;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
     init_db()
 
-    search = st.text_input("", placeholder="🔍 Search")
+    search = st.text_input("", placeholder="🔍 Search SKU, lot, or product description")
 
     if search:
         df = search_db(search)
@@ -728,44 +722,21 @@ div[data-testid="stButton"] > button[kind="secondary"]:hover {
         conn.close()
         st.dataframe(df)
 
-    # --- Replace original button here ---
-    st.markdown('<div id="clear-db">', unsafe_allow_html=True)
     if st.button("🧹 Clear database"):
         clear_database()
         st.success("Database cleared.")
-    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
 # EXCEL TOOLS
 # ===============================================================
 elif page == "Excel Tools":
+
     st.header("📂 Excel Tools")
-    st.markdown("""
-<style>
-
-/* Style ALL main-area buttons (not sidebar buttons) */
-div.block-container div[data-testid="stButton"] > button {
-    background: #ffffff !important;          /* White */
-    color: #2A0F44 !important;               /* Tarte purple text */
-    border: 2px solid #d0c2e8 !important;    /* Soft purple border */
-    border-radius: 10px !important;
-    padding: 8px 16px !important;
-    font-weight: 600 !important;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-}
-
-/* Hover */
-div.block-container div[data-testid="stButton"] > button:hover {
-    background: #f4f0ff !important;          /* lilac hover */
-    border-color: #b8a7dd !important;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
     st.write(f"Excel file: `{EXCEL_PATH}`")
     st.write(f"Sheet name: `{EXCEL_SHEET_NAME}`")
+    st.write(f"Inserting into row: `{EXCEL_INSERT_ROW}`")
 
     if st.button("📂 Open Excel file"):
         open_excel_file()
