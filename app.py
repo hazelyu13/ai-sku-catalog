@@ -38,7 +38,7 @@ st.set_page_config(
 )
 
 # ===============================================================
-# LUXURY TARTE UI THEME (YOUR FULL CSS)
+# LUXURY TARTE UI THEME (FULL CSS)
 # ===============================================================
 tarte_css = """
 <style>
@@ -125,7 +125,7 @@ tarte_css = """
         border-color: #f6edff80;
     }
 
-    /* Sidebar Open Excel button — white version */
+    /* Sidebar Open Excel button - white version */
     section[data-testid="stSidebar"] div.stButton > button {
         width: 100%;
         background: #ffffff !important;
@@ -278,7 +278,7 @@ def extract_text_from_docx(docx_file):
     return "\n".join(result)
 
 # ===============================================================
-# 2. PARSE FIELDS (normal vendor parsing)
+# 2. PARSE FIELDS
 # ===============================================================
 def parse_vendor_doc(text):
     fields = {
@@ -298,28 +298,31 @@ def parse_vendor_doc(text):
     return fields
 
 # ===============================================================
-# 2B. AI FIELD PREDICTION (NO API · regex + heuristics)
+# 2B. AI FIELD PREDICTION (returns fields + ai_flags)
 # ===============================================================
 def predict_missing_fields(raw_text, fields):
     """
     Enhance vendor field extraction using regex + heuristics.
-    Fills in SKU, Batch/Lot, Date, Qty, and Product Description when possible.
+    Returns (fields, ai_flags) where ai_flags marks which fields AI filled.
     """
+    ai_flags = {k: False for k in fields.keys()}
     text = raw_text.lower()
 
-    # --- SKU ---
+    # SKU
     if not fields.get("SKU"):
         sku_match = re.search(r"(sku|style|item)[^\w]?[\s#:]*([a-z0-9\-]{3,20})", text)
         if sku_match:
             fields["SKU"] = sku_match.group(2).upper()
+            ai_flags["SKU"] = True
 
-    # --- LOT / BATCH ---
+    # Lot / Batch
     if not fields.get("Batch/Lot No."):
         lot_match = re.search(r"(lot|batch|code|lote)[^\w]?[\s#:]*([a-z0-9\-]{3,20})", text)
         if lot_match:
             fields["Batch/Lot No."] = lot_match.group(2).upper()
+            ai_flags["Batch/Lot No."] = True
 
-    # --- DATE ---
+    # Date
     if not fields.get("Date"):
         date_match = re.search(
             r"((\d{4}[-./]\d{1,2}[-./]\d{1,2})|(\d{1,2}[-./]\d{1,2}[-./]\d{2,4}))",
@@ -327,14 +330,16 @@ def predict_missing_fields(raw_text, fields):
         )
         if date_match:
             fields["Date"] = date_match.group(1)
+            ai_flags["Date"] = True
 
-    # --- QTY ---
+    # Qty
     if not fields.get("Qty"):
         qty_match = re.search(r"(qty|quantity|pcs|units|pack)[^\d]*(\d{1,5})", text)
         if qty_match:
             fields["Qty"] = qty_match.group(2)
+            ai_flags["Qty"] = True
 
-    # --- PRODUCT DESCRIPTION ---
+    # Product description
     if not fields.get("Product Description"):
         desc_match = re.search(
             r"(lipstick|concealer|foundation|palette|mascara|gel|serum|cream|gloss)[a-z0-9\s\-]*",
@@ -342,25 +347,29 @@ def predict_missing_fields(raw_text, fields):
         )
         if desc_match:
             fields["Product Description"] = desc_match.group(0).title()
+            ai_flags["Product Description"] = True
         else:
-            # Fallback: first line that's not too short/long
             for line in raw_text.splitlines():
                 line_stripped = line.strip()
                 if 20 <= len(line_stripped) <= 80:
                     fields["Product Description"] = line_stripped
+                    ai_flags["Product Description"] = True
                     break
 
-    return fields
+    return fields, ai_flags
 
 # ===============================================================
-# 2C. REVIEW UI (Side-by-side)
+# 2C. REVIEW UI (with AI-filled chip support)
 # ===============================================================
-def review_fields_ui(initial_fields, raw_text, key_prefix=""):
+def review_fields_ui(initial_fields, raw_text, key_prefix="", ai_flags=None):
     """
     Side-by-side review:
     Left: raw extracted text
-    Right: editable fields
+    Right: editable fields with AI-filled badges where applicable.
     """
+    if ai_flags is None:
+        ai_flags = {}
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -373,36 +382,58 @@ def review_fields_ui(initial_fields, raw_text, key_prefix=""):
         )
 
     edited = {}
+
+    def field_row(label, field_key, default, widget_key):
+        st.markdown(
+            f"""
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
+                <span style="font-weight:600; color:#34114f;">{label}</span>
+                {"<span style='background:linear-gradient(90deg,#f5ecff,#e4d4ff); padding:2px 10px; border-radius:999px; font-size:11px; color:#6b3ea5; border:1px solid #e0c8ff;'>✨ AI-filled</span>" if ai_flags.get(field_key) else ""}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return st.text_input(
+            label="",
+            value=default or "",
+            key=widget_key,
+        )
+
     with col2:
         st.subheader("✏️ Review & Edit Fields")
-        edited["Product Description"] = st.text_input(
+
+        edited["Product Description"] = field_row(
             "Product Description",
-            value=initial_fields.get("Product Description") or "",
-            key=f"{key_prefix}_desc",
+            "Product Description",
+            initial_fields.get("Product Description"),
+            f"{key_prefix}_desc",
         )
-        edited["Batch/Lot No."] = st.text_input(
+        edited["Batch/Lot No."] = field_row(
             "Batch / Lot No.",
-            value=initial_fields.get("Batch/Lot No.") or "",
-            key=f"{key_prefix}_lot",
+            "Batch/Lot No.",
+            initial_fields.get("Batch/Lot No."),
+            f"{key_prefix}_lot",
         )
-        edited["Date"] = st.text_input(
+        edited["Date"] = field_row(
             "Date",
-            value=initial_fields.get("Date") or "",
-            key=f"{key_prefix}_date",
+            "Date",
+            initial_fields.get("Date"),
+            f"{key_prefix}_date",
         )
-        edited["SKU"] = st.text_input(
+        edited["SKU"] = field_row(
             "SKU",
-            value=initial_fields.get("SKU") or "",
-            key=f"{key_prefix}_sku",
+            "SKU",
+            initial_fields.get("SKU"),
+            f"{key_prefix}_sku",
         )
-        edited["Qty"] = st.text_input(
+        edited["Qty"] = field_row(
             "Qty",
-            value=initial_fields.get("Qty") or "",
-            key=f"{key_prefix}_qty",
+            "Qty",
+            initial_fields.get("Qty"),
+            f"{key_prefix}_qty",
         )
 
     return edited
-
 # ===============================================================
 # 3. DATABASE + DUPLICATE CHECK
 # ===============================================================
@@ -422,10 +453,6 @@ def init_db():
     conn.close()
 
 def save_to_db(fields):
-    """
-    Pure insert. No duplicate logic here.
-    Duplicate handling is done at the UI layer via check_duplicate().
-    """
     conn = sqlite3.connect("sku_catalog.db")
     cur = conn.cursor()
     cur.execute("""
@@ -443,10 +470,6 @@ def save_to_db(fields):
     st.success("✅ Saved to database!")
 
 def check_duplicate(fields):
-    """
-    Check if a record with same SKU + Batch/Lot already exists.
-    Returns the first duplicate row (tuple) or None.
-    """
     sku = fields.get("SKU")
     lot = fields.get("Batch/Lot No.")
     if not sku or not lot:
@@ -481,13 +504,12 @@ def clear_database():
     conn.close()
 
 # ===============================================================
-# 3B. EXTRA DB HELPERS (for Chatbot commands)
+# 3B. EXTRA DB HELPERS (Chatbot)
 # ===============================================================
 def export_csv():
     conn = sqlite3.connect("sku_catalog.db")
     df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
     conn.close()
-
     export_path = "sku_export.csv"
     df.to_csv(export_path, index=False)
     return export_path
@@ -496,7 +518,6 @@ def export_excel():
     conn = sqlite3.connect("sku_catalog.db")
     df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
     conn.close()
-
     export_path = "sku_export.xlsx"
     df.to_excel(export_path, index=False)
     return export_path
@@ -554,14 +575,12 @@ def save_to_excel(fields):
 
     ws = wb[EXCEL_SHEET_NAME]
 
-    # Map headers
     excel_headers = {}
     for col in range(1, ws.max_column + 1):
         header_value = ws.cell(row=1, column=col).value
         if header_value:
             excel_headers[header_value.lower()] = col
 
-    # Map parsed fields to Excel columns
     mapping = {
         "product description": fields.get("Product Description"),
         "lot #": fields.get("Batch/Lot No."),
@@ -584,20 +603,15 @@ def save_to_excel(fields):
     st.success("💾 Saved to Excel successfully!")
 
 # ===============================================================
-# 5. GALLERY IMAGE SAVER (SKU + LOT naming)
+# 5. GALLERY IMAGE SAVER (SKU + LOT in filename)
 # ===============================================================
 def save_image_to_gallery(fields, file_obj, original_name):
-    """
-    Save an image associated with a retain into data/gallery using:
-    SKU_<SKU>_LOT_<LOT>.ext
-    """
     gallery_folder = "data/gallery"
     os.makedirs(gallery_folder, exist_ok=True)
 
     sku = fields.get("SKU") or "NOSKU"
     lot = fields.get("Batch/Lot No.") or "NOLOT"
 
-    # Clean values to avoid weird filename chars
     sku_safe = re.sub(r"[^A-Za-z0-9\-]", "", str(sku))
     lot_safe = re.sub(r"[^A-Za-z0-9\-]", "", str(lot))
 
@@ -617,7 +631,7 @@ def save_image_to_gallery(fields, file_obj, original_name):
 init_db()
 
 # ===============================================================
-# SIDEBAR NAVIGATION + LOGO
+# SIDEBAR NAV + LOGO
 # ===============================================================
 logo_base64 = None
 try:
@@ -687,9 +701,8 @@ This dashboard automates the workflow for cataloging Tarte production retains:
 • Use the chatbot to trigger actions or search data  
         """
     )
-
 # ===============================================================
-# UPLOAD PAGE (with review + barcode + AI prediction + duplicate UI + gallery save)
+# UPLOAD PAGE
 # ===============================================================
 elif page == "Upload":
 
@@ -710,7 +723,6 @@ elif page == "Upload":
             st.markdown("---")
             st.subheader(f"📄 File {idx}: {f.name}")
 
-            # 1) Extract text + barcodes
             if f.name.lower().endswith(".docx"):
                 text = extract_text_from_docx(f)
                 barcodes = []
@@ -723,15 +735,12 @@ elif page == "Upload":
             if barcodes:
                 st.info(f"🔍 Detected barcodes / QR codes: {', '.join(barcodes)}")
 
-            # 2) Parse fields (basic) + AI prediction
             fields = parse_vendor_doc(text)
-            fields = predict_missing_fields(text, fields)
+            fields, ai_flags = predict_missing_fields(text, fields)
 
-            # 3) If still no SKU but barcode exists, use first barcode as SKU
             if barcodes and not fields.get("SKU"):
                 fields["SKU"] = barcodes[0]
 
-            # 4) Duplicate check (preview, not blocking yet)
             duplicate_row = check_duplicate(fields)
             if duplicate_row:
                 st.warning(
@@ -745,10 +754,13 @@ elif page == "Upload":
                 )
                 st.dataframe(dup_df, use_container_width=True)
 
-            # 5) Review UI (side-by-side)
-            edited_fields = review_fields_ui(fields, text, key_prefix=f"file_{idx}")
+            edited_fields = review_fields_ui(
+                fields,
+                text,
+                key_prefix=f"file_{idx}",
+                ai_flags=ai_flags,
+            )
 
-            # 6) Confirm / Cancel
             col_a, col_b = st.columns(2)
             with col_a:
                 confirm = st.button(
@@ -762,18 +774,15 @@ elif page == "Upload":
                 )
 
             if confirm:
-                # Re-check duplicate using edited fields
                 duplicate_row_final = check_duplicate(edited_fields)
                 if duplicate_row_final:
-                    st.error("🚫 Duplicate detected — saving blocked.")
-                    # Option A: Only allow override via separate button
+                    st.error("🚫 Duplicate detected - saving blocked.")
                     if st.button(
                         "🔓 Override & Force Save",
                         key=f"override_{idx}"
                     ):
                         save_to_db(edited_fields)
                         save_to_excel(edited_fields)
-                        # Save gallery image if this was an image file
                         if is_image_file:
                             save_image_to_gallery(edited_fields, f, f.name)
                 else:
@@ -788,7 +797,7 @@ elif page == "Upload":
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
-# CAMERA PAGE (with review + barcode + AI prediction + duplicate UI + gallery save)
+# CAMERA PAGE
 # ===============================================================
 elif page == "Camera":
 
@@ -796,22 +805,18 @@ elif page == "Camera":
     photo = st.camera_input("Take a photo of the retain or vendor sheet")
 
     if photo:
-        # 1) Extract text + barcodes
         text = extract_text_from_image(photo)
         barcodes = extract_barcodes_from_image(photo)
 
         if barcodes:
             st.info(f"🔍 Detected barcodes / QR codes: {', '.join(barcodes)}")
 
-        # 2) Parse + AI prediction
         fields = parse_vendor_doc(text)
-        fields = predict_missing_fields(text, fields)
+        fields, ai_flags = predict_missing_fields(text, fields)
 
-        # 3) If still no SKU but barcode exists, use first barcode as SKU
         if barcodes and not fields.get("SKU"):
             fields["SKU"] = barcodes[0]
 
-        # 4) Duplicate check (preview)
         duplicate_row = check_duplicate(fields)
         if duplicate_row:
             st.warning(
@@ -825,10 +830,13 @@ elif page == "Camera":
             )
             st.dataframe(dup_df, use_container_width=True)
 
-        # 5) Review UI
-        edited_fields = review_fields_ui(fields, text, key_prefix="camera")
+        edited_fields = review_fields_ui(
+            fields,
+            text,
+            key_prefix="camera",
+            ai_flags=ai_flags,
+        )
 
-        # 6) Confirm / Cancel
         col_a, col_b = st.columns(2)
         with col_a:
             confirm = st.button("✅ Confirm & Save from camera")
@@ -838,7 +846,7 @@ elif page == "Camera":
         if confirm:
             duplicate_row_final = check_duplicate(edited_fields)
             if duplicate_row_final:
-                st.error("🚫 Duplicate detected — saving blocked.")
+                st.error("🚫 Duplicate detected - saving blocked.")
                 if st.button("🔓 Override & Force Save", key="override_camera"):
                     save_to_db(edited_fields)
                     save_to_excel(edited_fields)
@@ -854,7 +862,7 @@ elif page == "Camera":
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
-# CHATBOT PAGE (with AI prediction + action commands)
+# CHATBOT PAGE
 # ===============================================================
 elif page == "Chatbot":
 
@@ -879,7 +887,6 @@ elif page == "Chatbot":
         reply = ""
         lower = user_input.lower()
 
-        # --- COMMAND: process latest ---
         if "process latest" in lower:
             folder = "data/specs/"
             files = [
@@ -905,28 +912,25 @@ elif page == "Chatbot":
                         barcodes = extract_barcodes_from_image(fh)
                     is_image_file = True
 
-                # Parse + AI prediction
                 fields = parse_vendor_doc(text)
-                fields = predict_missing_fields(text, fields)
+                fields, _ = predict_missing_fields(text, fields)
 
                 if barcodes and not fields.get("SKU"):
                     fields["SKU"] = barcodes[0]
 
-                # Duplicate handling: do not auto-save duplicates here
                 duplicate_row = check_duplicate(fields)
                 if duplicate_row:
                     reply = (
                         f"⚠️ Duplicate detected for SKU {fields.get('SKU')} / "
-                        f"Lot {fields.get('Batch/Lot No.')} — not saved.\n\n"
+                        f"Lot {fields.get('Batch/Lot No.')} - not saved.\n\n"
                         "Use the Upload or Camera page to review and override if needed."
                     )
                 else:
                     save_to_db(fields)
                     save_to_excel(fields)
                     reply = f"Processed and saved latest file: {os.path.basename(latest)}"
-                    # Optional: auto-gallery save from chatbot if image
+
                     if is_image_file:
-                        # Re-open file for saving
                         with open(latest, "rb") as fh:
                             class _Tmp:
                                 def __init__(self, b): self._b = b
@@ -935,14 +939,12 @@ elif page == "Chatbot":
                             tmp_file = _Tmp(buf)
                             save_image_to_gallery(fields, tmp_file, os.path.basename(latest))
 
-        # --- COMMAND: search <term> ---
         elif "search" in lower:
             term = user_input.split("search", 1)[1].strip()
             df = search_db(term)
             st.dataframe(df)
             reply = f"Search results for '{term}'."
 
-        # --- COMMAND: show database ---
         elif "show database" in lower:
             conn = sqlite3.connect("sku_catalog.db")
             df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
@@ -950,22 +952,18 @@ elif page == "Chatbot":
             st.dataframe(df)
             reply = "Full database view."
 
-        # --- COMMAND: clear database ---
         elif "clear database" in lower:
             clear_database()
             reply = "Database cleared."
 
-        # --- COMMAND: export csv ---
         elif "export csv" in lower:
             path = export_csv()
             reply = f"📤 Exported as CSV: `{path}`"
 
-        # --- COMMAND: export excel ---
         elif "export excel" in lower:
             path = export_excel()
             reply = f"📤 Exported as Excel: `{path}`"
 
-        # --- COMMAND: undo last save ---
         elif "undo" in lower:
             deleted = undo_last_save()
             if deleted:
@@ -973,12 +971,10 @@ elif page == "Chatbot":
             else:
                 reply = "Nothing to undo."
 
-        # --- COMMAND: stats ---
         elif "stats" in lower:
             total, duplicates = database_stats()
             reply = f"📊 Total rows: {total}\n\nDuplicate SKU/Lot combos:\n{duplicates}"
 
-        # --- COMMAND: delete <SKU> ---
         elif "delete" in lower:
             term = lower.split("delete", 1)[1].strip()
             conn = sqlite3.connect("sku_catalog.db")
@@ -988,7 +984,6 @@ elif page == "Chatbot":
             conn.close()
             reply = f"🗑 Deleted all rows with SKU `{term}`."
 
-        # --- COMMAND: list duplicates ---
         elif "list duplicates" in lower:
             conn = sqlite3.connect("sku_catalog.db")
             df = pd.read_sql_query("""
@@ -1001,12 +996,10 @@ elif page == "Chatbot":
             st.dataframe(df)
             reply = "🔍 Duplicate rows shown above."
 
-        # --- COMMAND: open excel ---
         elif "open excel" in lower:
             open_excel_file()
-            reply = "Opening Excel…"
+            reply = "Opening Excel..."
 
-        # --- COMMAND: show latest ---
         elif "show latest" in lower:
             conn = sqlite3.connect("sku_catalog.db")
             df = pd.read_sql_query(
@@ -1016,7 +1009,6 @@ elif page == "Chatbot":
             st.dataframe(df)
             reply = "📄 Latest saved row shown above."
 
-        # --- COMMAND: help ---
         elif "help" in lower:
             reply = """
 Available Commands:
@@ -1035,7 +1027,6 @@ Available Commands:
 • help
 """
 
-        # --- Unknown command ---
         else:
             reply = (
                 "Unknown command. Try: `process latest`, `search <term>`, "
@@ -1072,12 +1063,12 @@ elif page == "Database":
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===============================================================
-# GALLERY PAGE (Pinterest-style grid of processed retains)
+# GALLERY PAGE (Pinterest-style with filters)
 # ===============================================================
 elif page == "Gallery":
 
     st.header("🖼️ Processed Retains Gallery")
-    st.write("A visual grid of all saved retains, organized by SKU and lot.")
+    st.write("A visual grid of all saved retains, with filters for SKU, lot, and date.")
 
     gallery_folder = "data/gallery"
 
@@ -1090,19 +1081,98 @@ elif page == "Gallery":
         if img.lower().endswith((".jpg", ".jpeg", ".png"))
     ]
 
+    conn = sqlite3.connect("sku_catalog.db")
+    db_df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
+    conn.close()
+
+    if db_df.empty:
+        sku_options = []
+        lot_options = []
+        date_options = []
+    else:
+        sku_options = sorted(db_df["sku"].dropna().astype(str).unique().tolist())
+        lot_options = sorted(db_df["batch_lot"].dropna().astype(str).unique().tolist())
+        date_options = sorted(db_df["date"].dropna().astype(str).unique().tolist())
+
+    filt_col1, filt_col2, filt_col3, filt_col4 = st.columns([1, 1, 1, 2])
+
+    with filt_col1:
+        sku_filter = st.selectbox(
+            "Filter by SKU",
+            ["All"] + sku_options if sku_options else ["All"],
+        )
+
+    with filt_col2:
+        lot_filter = st.selectbox(
+            "Filter by Lot",
+            ["All"] + lot_options if lot_options else ["All"],
+        )
+
+    with filt_col3:
+        date_filter = st.selectbox(
+            "Filter by Date",
+            ["All"] + date_options if date_options else ["All"],
+        )
+
+    with filt_col4:
+        search_filter = st.text_input(
+            "Search text (SKU, lot, or description)",
+            "",
+            placeholder="e.g. SN52, holiday set, batch 3392",
+        ).strip().lower()
+
+    st.markdown("---")
+
     if not images:
-        st.info("No retains in the gallery yet — save from Upload or Camera first.")
+        st.info("No retains in the gallery yet - save from Upload or Camera first.")
     else:
         cols = st.columns(4)
 
-        # Load DB once
-        conn = sqlite3.connect("sku_catalog.db")
-        db_df = pd.read_sql_query("SELECT * FROM sku_catalog", conn)
-        conn.close()
+        lookup = {}
+        if not db_df.empty:
+            for _, row in db_df.iterrows():
+                key = (str(row["sku"]), str(row["batch_lot"]))
+                lookup[key] = row
 
         for idx, img_path in enumerate(sorted(images)):
-            col = cols[idx % 4]
+            basename = os.path.basename(img_path)
+            match = re.match(r"SKU_(.+)_LOT_(.+)\.[^.]+$", basename, re.IGNORECASE)
 
+            display_info = None
+            sku_val = None
+            lot_val = None
+
+            if match:
+                sku_val = match.group(1)
+                lot_val = match.group(2)
+                display_info = lookup.get((sku_val, lot_val))
+
+            if sku_filter != "All":
+                if not sku_val or sku_val != sku_filter:
+                    continue
+
+            if lot_filter != "All":
+                if not lot_val or lot_val != lot_filter:
+                    continue
+
+            if date_filter != "All":
+                if display_info is None or str(display_info.get("date")) != date_filter:
+                    continue
+
+            if search_filter:
+                if display_info is None:
+                    continue
+                haystack = " ".join(
+                    [
+                        str(display_info.get("sku", "")).lower(),
+                        str(display_info.get("batch_lot", "")).lower(),
+                        str(display_info.get("product_desc", "")).lower(),
+                    ]
+                )
+                if search_filter not in haystack:
+                    continue
+
+            col = cols[idx % 4]
             with col:
                 st.markdown(
                     """
@@ -1119,23 +1189,6 @@ elif page == "Gallery":
                 )
 
                 st.image(img_path, use_column_width=True)
-
-                # Try to parse SKU + LOT from filename: SKU_<SKU>_LOT_<LOT>.ext
-                basename = os.path.basename(img_path)
-                match = re.match(r"SKU_(.+)_LOT_(.+)\.[^.]+$", basename, re.IGNORECASE)
-
-                display_info = None
-                if match:
-                    sku_from_file = match.group(1)
-                    lot_from_file = match.group(2)
-
-                    # Match against DB
-                    subset = db_df[
-                        (db_df["sku"].astype(str) == sku_from_file)
-                        & (db_df["batch_lot"].astype(str) == lot_from_file)
-                    ]
-                    if not subset.empty:
-                        display_info = subset.iloc[0]
 
                 if display_info is not None:
                     st.markdown(
@@ -1171,3 +1224,5 @@ elif page == "Excel Tools":
     st.write("Tip: close the workbook before running updates from this dashboard.")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+
